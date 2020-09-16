@@ -1,0 +1,825 @@
+---
+title: "rstudio::conf 2020 Tidy Forecasting #2"
+author: Robert Lankford
+date: '2020-02-10'
+slug: rstudio-conf-2020-tidy-forecasting-2
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, message = FALSE, 
+  warning = FALSE, error = FALSE,
+  fig.align = "center"
+)
+```
+
+This post is the second in a series documenting my experience in the [Tidy Time Series and Forecasting in R workshop](https://education.rstudio.com/blog/2020/02/conf20-ts/) at [rstudio::conf 2020](https://rstudio.com/resources/rstudioconf-2020/) in San Francisco, CA.
+
+<!--more-->
+
+In the previous post, I talked about the first day of the Tidy Forecasting in R workshop. The first day was focused on "everything that *is not* forecasting", such as:
+
+1. What a `tsibble` is
+2. Time-series plots
+3. Time-series transformations
+
+On the second day, we learned about "everything that *is* forecasting". This post will focus on those topics, which include:
+
+1. Building time-series models
+2. Validating time-series models
+3. Producing forecasts
+4. Determining forecast accuracy
+
+# Setup
+
+The following packages will be needed.
+
+```{r echo=FALSE}
+library(knitr)
+library(kableExtra)
+```
+
+```{r}
+# Tidyverse
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+library(stringr)
+
+# Tidyverts
+library(tsibble)
+library(feasts)
+library(fable)
+
+# Other
+library(ggplot2)
+```
+
+The following data sets are used in this post.
+
+1. Monthly retail turnover for department stores in Victoria, Australia 
+
+```{r}
+tsibbledata::aus_retail %>% 
+  filter(
+    Industry    == "Department stores",
+    State       == "Victoria",
+    year(Month) >= 2000
+  ) %>% 
+  select(Month, Turnover) -> victoria_dept_stores_tsbl
+```
+
+2. Yearly economic indicator values for Australia
+
+```{r}
+tsibbledata::global_economy %>% 
+  filter(Country == "Australia") %>% 
+  select(Year, Growth, CPI, Imports, Exports) %>% 
+  drop_na() %>% 
+  as_tsibble(index = Year) -> aus_economy_tsbl
+```
+
+# Time-Series Decomposition
+
+Many time-series can be broken into three components:
+
+1. Seasonality: the periodic repeated fluctuations that occur at a known, fixed period (e.g. monthly patterns)
+2. Trend-Cycle: the progression of the series over the long-term (trend) and the non-periodic repeated fluctuations (cycle) 
+3. Remainder: the random, irregular "noise" that is leftover after removing the previous two components
+
+The `feasts` package provides the `STL()` function to easily decomposes a time-series. STL stands for **S**easonal and **T**rend Decomposition using **L**oess. 
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  model(STL = STL(Turnover)) -> victora_dept_stores_stl_mbl
+```
+
+```{r echo=FALSE}
+victora_dept_stores_stl_mbl
+```
+
+After fitting an STL model, passing the resulting `mable` (model-table) into the `components()` function will return a `dable` (decomposition-table). The `dable` contains all of the decomposition components.
+
+```{r}
+victoria_dept_stores_stl_dbl <- components(victora_dept_stores_stl_mbl)
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_stl_dbl
+```
+
+The `dable` can then be passed into the `autoplot()` function to plot the original series and the decomposed components.
+
+```{r}
+victoria_dept_stores_stl_dbl %>% 
+  autoplot() +
+  theme_bw()
+```
+
+Note that the trend and seasonality of a decomposition do not necessarily have to be fixed. They are allowed to change over time. The helper functions `trend()` and `season()` can be added to the `STL()` function to specify the `window`. The `window` is the number of consecutive observations (time-periods) used when estimating the seasonal or the trend-cycle component. The shorter the window, the quicker the trend or seasonality is allowed to change. At the extreme, setting the seasonality window to infinity is essentially assuming that the seasonality is identical across each time-period.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  model(STL = STL(Turnover ~ trend(window = 24) + season(window = 48))) %>% 
+  components() %>% 
+  autoplot() +
+  theme_bw()
+```
+
+# Basic & Baseline Methods
+
+The `fable` package contains several "basic" methods of forecasting. These methods, at times, can prove quite useful, and can even produce good forecasts; however, they will most often be used as baselines to compare the performance of other, often more complicated, forecasting methods. These methods include:
+
+* `MEAN()` (mean): the mean of the entire series is projected forward as the forecast
+* `NAIVE()` (naive): the last value of the series is projected forward as the forecast
+* `SNAIVE()` (seasonal naive): the last value of each season of the series (e.g. the quarter or month last year) is projected forward as the forecast
+* `RW()` (random walk): the last value of the series, plus the average change across the whole series, is projected forward as the forecast
+
+All of these methods can be fit to the data at the same time within the `model()` function. Notice that the random walk model requires the use of the `drift()` helper function. Without drift, a random walk is just the naive model.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  model(
+    mean     = MEAN(Turnover),
+    naive    = NAIVE(Turnover),
+    snaive   = SNAIVE(Turnover),
+    rw_drift = RW(Turnover ~ drift())
+  ) -> victoria_dept_stores_baseline_mbl
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_baseline_mbl
+```
+
+Once we have these models, we can forecast across an arbitrary time horizon with the `forecast()` function.
+This function returns the titular `fable` (forecast-table). The `fable` contains the model type, the time index, the point forecast, and the parameters of the distribution of the forecast as a `<dist>` list-column.
+
+```{r}
+victoria_dept_stores_baseline_mbl %>% 
+  forecast(h = "2 years") -> victoria_dept_stores_baseline_fbl
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_baseline_fbl %>% 
+  group_by(.model) %>% 
+  filter(row_number() %in% 1:3) %>% 
+  as_tibble() %>% 
+  mutate(
+    Month    = as.character(Month),
+    .mean    = as.numeric(.mean)
+  ) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+A `fable` can be passed directly into the `autoplot()` function to plot the forecasts. Note that we get confidence intervals for the forecasts. The point forecast is the mean of the interval.
+
+```{r}
+victoria_dept_stores_baseline_fbl %>% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1, scales = "free_y") +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = "B"
+    )
+  ) +
+  labs(
+    title    = "Two-Year Forecast of Yearly Retail Turnover for Victoria",
+    subtitle = "Models: Mean, Naive, Seasonal Naive, and Random Walk with Drift",
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+The plotted confidence intervals can be turned off by setting `level = NULL` in the `autoplot()` function.
+
+```{r}
+victoria_dept_stores_baseline_fbl %>% 
+  autoplot(victoria_dept_stores_tsbl, level = NULL) +
+  facet_wrap(~ .model, ncol = 1) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = "B"
+    )
+  ) +
+  labs(
+    title    = "Two-Year Forecast of Yearly Retail Turnover for Victoria",
+    subtitle = "Models: Mean, Naive, Seasonal Naive, and Random Walk with Drift",
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+# More Complex Methods
+
+We can now start looking at more complicated algorithms. These models take a bit more computational time and power to fit, and are more difficult to interpret and interpret; however, they can often outperform the baseline models. The models introduced in the workshop were:
+
+* Exponential Smoothing (ETS)
+* Autoregressive Integrated Moving Average (ARIMA)
+* Dynamic Regression/Regression with ARIMA Errors (RegARIMA)
+
+## Exponential Smoothing
+
+**E**xponen**T**ial **S**moothing models, also called **E**rror, **T**rend, and **S**easonality models and abbreviated ETS, attempt to forecast a time-series based on its "Level", "Trend", and "Seasonal" components. Smoothing parameters are used to control the rates of change of those components. ETS models are similar to models where the forecast is based off of weighted past observations; however, for ETS, the most recent observations have higher weights than the earliest observations. These components can be:
+
+* Additive: the error, trend, and seasonality are added together to get the resulting time-series
+* Multiplicative: the error, trend, and seasonality are multiplied together to get the resulting time-series
+* Damped: specifically for the trend component, instead of increasing indefinitely, the long-term forecasts will eventually "flatten out"
+
+There are 15 combinations of Exponential Smoothing models available in the `fable` package using the `ETS()` function. Within the `ETS()` function, you can specify the `error()`, `trend()`, and `season()`. If you do not specify these options, the `ETS()` function will automatically pick the optimal values based on minimizing the [AICc](https://en.wikipedia.org/wiki/Akaike_information_criterion#AICc). The options are:
+
+* Additive: `method = "A"`
+* Multiplicative: `method = "M"`
+* Additive Damped: `method = "Ad"`
+* Multiplicative Damped: `method = "Md"`
+
+The typical way of expressing an Exponential Smoothing model is ETS(Error, Trend, Seasonal), so an ETS(M,N,A) has multiplicative errors, no trend, and additive seasonality. Note below that we do not have any models with both additive errors and multiplicative seasonality. Dr. Hyndman recommended against using this combination, as they almost never have good results.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  model(
+    ANN  = ETS(Turnover ~ error("A") + trend("N") + season("N")),
+    AAN  = ETS(Turnover ~ error("A") + trend("A") + season("N")),
+    AAdN = ETS(Turnover ~ error("A") + trend("Ad") + season("N")),
+    ANA  = ETS(Turnover ~ error("A") + trend("N") + season("A")),
+    AAA  = ETS(Turnover ~ error("A") + trend("A") + season("A")),
+    AAdA = ETS(Turnover ~ error("A") + trend("Ad") + season("A")),
+    
+    MNN  = ETS(Turnover ~ error("M") + trend("N") + season("N")),
+    MAN  = ETS(Turnover ~ error("M") + trend("A") + season("N")),
+    MAdN = ETS(Turnover ~ error("M") + trend("Ad") + season("N")),
+    MNA  = ETS(Turnover ~ error("M") + trend("N") + season("A")),
+    MAA  = ETS(Turnover ~ error("M") + trend("A") + season("A")),
+    MAdA = ETS(Turnover ~ error("M") + trend("Ad") + season("A")),
+    MNM  = ETS(Turnover ~ error("M") + trend("N") + season("M")),
+    MAM  = ETS(Turnover ~ error("M") + trend("A") + season("M")),
+    MAdM = ETS(Turnover ~ error("M") + trend("Ad") + season("M")),
+  ) -> victoria_dept_stores_ets_mbl
+```
+
+```{r echo=FALSE}
+glimpse(victoria_dept_stores_ets_mbl)
+```
+
+We can see what the smoothing parameters are by selecting a specific model and using the `report()` function.
+
+```{r}
+victoria_dept_stores_ets_mbl %>% 
+  select(MAdA) %>% 
+  report()
+```
+
+You can also use the `tidy()` function.
+
+```{r eval=FALSE}
+victoria_dept_stores_ets_mbl %>% 
+  select(MAdA) %>% 
+  tidy()
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_ets_mbl %>% 
+  select(MAdA) %>% 
+  tidy() %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+Selecting just a few of these models, we can see how the forecasts over the next few years play out.
+
+```{r}
+victoria_dept_stores_ets_mbl %>% 
+  select(ANA, AAdA, MAdA, MAM) %>% 
+  forecast(h = "2 years") %>% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = "B"
+    )
+  ) +
+  labs(
+    title    = "Two-Year Forecast of Yearly Retail Turnover for Victoria",
+    subtitle = "Models: ETS(A,N,A), ETS(A,Ad,A), ETS(M,Ad,A), ETS(M,A,M)",
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+## ARIMA
+
+ARIMA models are composed of three terms:
+
+* Autoregressive (AR): lagged observations of the series
+* Integrated (I): differencing of the series to make it stationary
+* Moving Average (MA): lagged errors
+
+Stationarity is a key assumption of this model, and the reason for the "I" term. Essentially, stationarity is when all the observations in the series that come after any observation 't' do not depend on what the value of 't' was. In other words, patterns are not really predictable in the long-run (the past cannot necessarily predict the future) and the time-series is roughly horizontal with constant variance. If this assumption is not met, the data can be differenced (the observation at t+1 minus the observation at time t) and the result of the differencing will often be stationary. The maximum number of times data should be differenced is twice, according to Dr. Hyndman.
+
+The `feasts` package provides the `unitroot_kpss()` function to test the stationarity assumption. The [KPSS Test](https://en.wikipedia.org/wiki/KPSS_test) tests for a unit root, where the null hypothesis is essentially that the series is stationary. If the test returns a p-value less than 0.05, we should difference the data and test again.
+
+```{r eval=FALSE}
+victoria_dept_stores_tsbl %>% 
+  features(Turnover, unitroot_kpss)
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_tsbl %>% 
+  features(Turnover, unitroot_kpss) %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+Should we receive a result with a p-value of less than 0.05 (as above), we can use the `difference()` function within `features()` to difference the series and then apply the KPSS test again.
+
+```{r eval=FALSE}
+victoria_dept_stores_tsbl %>% 
+  features(difference(Turnover), unitroot_kpss)
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_tsbl %>% 
+  features(difference(Turnover), unitroot_kpss) %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+Once we have determined if differencing is required, we can move to fitting ARIMA models. We can pick the AR, differencing, and MA terms using the `pdq()` function within the `ARIMA()` function.. In ARIMA terminology:
+
+* Parameter 'p' is the number of AR terms (lags of the response variable)
+* Parameter 'd' is the number of times to difference the series
+* Parameter 'q' is the number of MA terms (lags of the error terms)
+
+Note that these lags are linear in time, meaning they are the period(s) directly before the base period, and they do not account for seasonality. For example, if we have monthly data, a lag of one will take the month before, a lag of two will take two months before, and so on. If we want to consider seasonality we need to use seasonal lags. For monthly data, we would take the 12th lag for the month in the previous year. Again, `fable` allows us to select the seasonal terms using the `PDQ()` function within the `ARIMA()` function. In ARIMA terminology:
+
+* Parameter 'P' is the number of seasonal AR terms
+* Parameter 'D' is the number of times to difference the seasons of the series (for example, take the difference between this month and the same month last year)
+* Parameter 'Q' is the number of seasonal MA terms
+
+If you do not want to select the p, d, q, P, D, and Q parameters yourself, you can just pass the response variable into the `ARIMA()` function and the underlying algorithm will select the values that minimize the AICc.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  model(
+    arima_211_000 = ARIMA(Turnover ~ pdq(2,1,1) + PDQ(0,0,0)),
+    arima_012_002 = ARIMA(Turnover ~ pdq(0,1,2) + PDQ(0,0,2)),
+    arima_200_010 = ARIMA(Turnover ~ pdq(2,0,0) + PDQ(0,1,0)),
+    arima_auto    = ARIMA(Turnover)
+  ) -> victoria_dept_stores_arima_mbl
+```
+
+```{r echo=FALSE}
+glimpse(victoria_dept_stores_arima_mbl)
+```
+
+Like before, we can use the `report()` function to check out a particular model.
+
+```{r}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  report()
+```
+
+Also like before, the `tidy()` function can be used.
+
+```{r eval=FALSE}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  tidy()
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  tidy() %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+Once we have a model we like, we can forecast ahead and plot the results.
+
+```{r}
+victoria_dept_stores_arima_mbl %>% 
+  forecast(h = "2 years") %>% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = "B"
+    )
+  ) +
+  labs(
+    title    = "Two-Year Forecast of Yearly Retail Turnover for Victoria",
+    subtitle = str_glue("Models: ARIMA(2,1,1), ARIMA(0,1,2)(0,0,2)[12],  
+                        ARIMA(2,0,0)(0,1,0), ARIMA(2,1,1)(1,1,2)[12]"),
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+## Dynamic Regression (RegARIMA)
+
+The last algorithm introduced at the workshop was Dynamic Regression, or a linear regression with ARIMA errors. In regular linear regression, we [do not want the residuals to be correlated](http://people.duke.edu/~rnau/testing.htm#assumptions). In Dynamic Regression, we allow the residuals to be correlated, and then fit those residuals to an ARIMA process. This is an extension of the `ARIMA()` function where we add explanatory variables. 
+
+For these examples, I will switch the [Australian economy data set](https://tsibbledata.tidyverts.org/reference/global_economy.html). This data set has the annual percentage growth in GDP for Australia (we will be trying to predict this), and some other information, such as CPI, and Imports and Exports as a percentage of GDP.
+
+```{r echo=FALSE}
+aus_economy_tsbl %>% 
+  head(5) %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+The percentage growth in GDP for Australia from 1961 to 2017 looks like this:
+
+```{r}
+aus_economy_tsbl %>% 
+  autoplot(Growth) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed") +
+  theme_minimal() +
+  scale_y_continuous(
+    labels = scales::percent_format(scale = 1, accuracy = 0.1)
+  ) +
+  expand_limits(y = c(-8, 8)) +
+  labs(
+    title    = "Annual Percentage Growth in GDP For Australia",
+    subtitle = "Sourced from tsibbledata package",
+    caption  = "Original Source: The World Bank",
+    x        = "",
+    y        = "Growth in GDP"
+  )
+```
+
+As with basic ARIMA models, you can either specify the p, d, and q parameters or allow the function to select them for you.
+
+```{r}
+aus_economy_tsbl %>% 
+  filter(Year <= 2010) %>% 
+  model(
+    regarima_110  = ARIMA(Growth ~ CPI + Imports + Exports + pdq(1,1,0)),
+    regarima_010  = ARIMA(Growth ~ CPI + Imports + Exports + pdq(0,1,0)),
+    regarima_002  = ARIMA(Growth ~ CPI + Imports + Exports + pdq(0,0,2)),
+    regarima_auto = ARIMA(Growth ~ CPI + Imports + Exports)
+  ) -> aus_economy_dyn_reg_mbl
+```
+
+```{r echo=FALSE}
+glimpse(aus_economy_dyn_reg_mbl)
+```
+
+Note that I have held out 2011 to 2017. The held out years will be used to forecast because we need the extraneous variables to have future values (since they are variables in the model and *not* what is being forecasted). We can see this by using the `report()` function.
+
+```{r}
+aus_economy_dyn_reg_mbl %>% 
+  select(regarima_auto) %>% 
+  report()
+```
+
+The `tidy()` function again works here.
+
+```{r eval=FALSE}
+aus_economy_dyn_reg_mbl %>% 
+  select(regarima_auto) %>% 
+  tidy()
+```
+
+```{r echo=FALSE}
+aus_economy_dyn_reg_mbl %>% 
+  select(regarima_auto) %>% 
+  tidy() %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+We can now use the held data to forecast the `Growth` variable from 2011 to 2017. Note that including the full data set in the `autoplot()` function will plot the actual `Growth` over the forecast horizon. This is useful to visually see how well the forecast performed before we get to the formal performance metrics.
+
+```{r}
+aus_economy_tsbl %>% 
+  filter(Year > 2010) %>% 
+  forecast(object = aus_economy_dyn_reg_mbl) %>% 
+  autoplot(aus_economy_tsbl) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed") +
+  facet_wrap(~ .model, ncol = 1, scales = "free_y") +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::percent_format(scale = 1, accuracy = 0.1)
+  ) +
+  labs(
+    title    = str_glue("Seven-Year Forecast of Annual Percentage Growth 
+                        in GDP For Australia"),
+    subtitle = str_glue("Models: four combinations of Growth = CPI + Imports + Exports
+                        with ARIMA(1,1,0), ARIMA(0,1,0), ARIMA(0,0,2) and 
+                        ARIMA(0,0,0) errors"),
+    x        = "",
+    y        = "Growth in GDP"
+  )
+```
+
+## Ensemble Method
+
+Having been introduced to seven time-series model types (four baseline and three more complex), the process of ensembling was then introduced. We can train multiple models, and then take some weighted average of their outputs as the forecast. The `fable` package is smart enough to combine forecasts using only basic arithmetic, and the `forecast()` function is smart enough to interpret the ensemble. The ensemble model will forecast for all the models, combine them, and adjust the final forecast appropriately.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  model(
+    snaive = SNAIVE(Turnover),
+    ets    = ETS(Turnover),
+    arima  = ARIMA(Turnover)
+  ) %>% 
+  mutate(mixed = (snaive + ets + arima) / 3) -> victoria_dept_stores_ensemble_mbl
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_ensemble_mbl
+```
+
+The `mixed` model is of type `<COMBINATION>` indicating that it has combined the three models. In this case, it has assigned each model an equal weight, but you can choose a different weighting system. By using the `report()` function, we can see the individual models that make up the ensemble and how they are added together. Note that as of the publication date of this post, the `tidy()` function cannot be used on `an object of class "model_combination"`.
+
+```{r}
+victoria_dept_stores_ensemble_mbl %>% 
+  select(mixed) %>% 
+  report()
+```
+
+By themselves, the three underlying models produce the following forecasts:
+
+```{r}
+victoria_dept_stores_ensemble_mbl %>% 
+  select(-mixed) %>% 
+  forecast(h = "3 years") %>% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1) +
+  expand_limits(y = 0) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = "B"
+    )
+  ) +
+  labs(
+    title    = "Three-Year Forecast of Yearly Retail Turnover for Victoria",
+    subtitle = "Models: Seasonal Naive, ETS(M,Ad,M), ARIMA(2,1,1)(1,1,2)[12]",
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+Taking a simple average of the three models, the ensemble produces the following forecast:
+
+```{r}
+victoria_dept_stores_ensemble_mbl %>% 
+  select(mixed) %>% 
+  forecast(h = "3 years") %>% 
+  autoplot(victoria_dept_stores_tsbl) +
+  theme_minimal() +
+  expand_limits(y = 0) +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = "B"
+    )
+  ) +
+  labs(
+    title    = "Three-Year Forecast of Yearly Retail Turnover for Victoria",
+    subtitle = str_glue("Ensemble model made of equal weights of: 
+                        Seasonal Naive, ETS(M,Ad,M), ARIMA(2,1,1)(1,1,2)[12]"),
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+# Model Diagnostics
+
+Building a model that produces a reasonable looking forecast is good, but there are steps that must be taken to validate that model. In my case, all the models I build in my current role must be validated by our risk and compliance teams. It is important that I not only prove that my model is statistically correct, I must also justify the process I used to select the model.
+
+## Information Criteria
+
+A straightforward way to justify why a certain model was chosen over another is to use various information criteria, such as [AIC](https://en.wikipedia.org/wiki/AIC), [BIC](https://en.wikipedia.org/wiki/BIC), or [AICc](https://en.wikipedia.org/wiki/Akaike_information_criterion#AICc). While these measures are certainly convenient, there are some very important restrictions to know.
+
+* Comparisons can only be done on models of the same type (e.g. you cannot compare the AIC of an ETS model to that of an ARIMA model)
+* Comparisons for ARIMA models can only be done between those models with the same number of differences (e.g. you cannot compare the AIC of an ARIMA model with d=1 to that of an ARIMA model with d=0)
+
+If the models in your `mable` do not fall into the above restrictions, their information criteria can be calculated using the `glance()` function.
+
+```{r eval=FALSE}
+victoria_dept_stores_tsbl %>% 
+  model(
+    arima_111 = ARIMA(Turnover ~ pdq(1,1,1) + PDQ(0,0,0)),
+    arima_212 = ARIMA(Turnover ~ pdq(2,1,2) + PDQ(0,0,0)),
+    arima_012 = ARIMA(Turnover ~ pdq(0,1,2) + PDQ(0,0,0)),
+    arima_200 = ARIMA(Turnover ~ pdq(2,1,0) + PDQ(0,0,0))
+  ) %>% 
+  glance() %>% 
+  select(.model, AIC, BIC, AICc)
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_tsbl %>% 
+  model(
+    arima_111 = ARIMA(Turnover ~ pdq(1,1,1) + PDQ(0,0,0)),
+    arima_212 = ARIMA(Turnover ~ pdq(2,1,2) + PDQ(0,0,0)),
+    arima_012 = ARIMA(Turnover ~ pdq(0,1,2) + PDQ(0,0,0)),
+    arima_200 = ARIMA(Turnover ~ pdq(2,1,0) + PDQ(0,0,0))
+  ) %>% 
+  glance() %>% 
+  select(.model, AIC, BIC, AICc) %>% 
+  mutate_if(is.numeric, round, digits = 0) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## Residual Diagnostics
+
+We know how to compare models from the same modeling algorithm, but what about across different algorithms? We will discuss checking the accuracy of the forecasts on out-of-sample data in the next section, but a good first step is to check the residuals. For a time-series model, we basically have two key assumptions that must be validated:
+
+1. The residuals are uncorrelated
+2. The residuals have mean zero
+
+While not *necessary*, meeting the following assumptions are also very useful:
+
+3. The residuals have constant variance
+4. The residuals are normally distributed
+
+Essentially, meeting all four of these assumptions means your residuals are [Gaussian White Noise](https://en.wikipedia.org/wiki/Additive_white_Gaussian_noise).
+
+The first thing we can do to check these assumptions is to simply plot the distribution of the residuals. The residuals from a forecast can be calculated using the `augment()` function. I will use the ARIMA models for these examples.
+
+```{r}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  augment() %>% 
+  ggplot() +
+  geom_histogram(aes(x = .resid), color = "white") +
+  theme_minimal() +
+  labs(
+    title    = str_glue("Yearly Retail Turnover for Victoria: 
+                        Distribution of Residuals"),
+    subtitle = "Model: ARIMA(2,1,1)(1,1,2)[12]",
+    x        = "Residual",
+    y        = "Count"
+  )
+```
+
+Basic time-series are also helpful to see if there are any dramatic outliers and at what observation they occurred.
+
+```{r}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  augment() %>% 
+  autoplot(.resid) +
+  theme_minimal() +
+  labs(
+    title    = str_glue("Yearly Retail Turnover for Victoria: 
+                        Time-Series Residuals"),
+    subtitle = "Model: ARIMA(2,1,1)(1,1,2)[12]",
+    x        = "Month",
+    y        = "Residual"
+  )
+```
+
+We can get a little more quantitatively statistical, rather than purely visual, by plotting the ACF of the residuals. We can see the amount of autocorrelation, if any exists.
+
+```{r}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  augment() %>% 
+  ACF(.resid) %>% 
+  autoplot() +
+  theme_minimal() +
+  labs(
+    title    = "Yearly Retail Turnover for Victoria:  ACF Plot",
+    subtitle = "Model: ARIMA(2,1,1)(1,1,2)[12]",
+    x        = "Lag (Month)",
+    y        = "ACF"
+  )
+```
+
+Based on the plots we have seen so far, the residuals look roughly normal, and the ACF shows no autocorrelation. To formalize these observations, we can run a [Ljung-Box Test](https://en.wikipedia.org/wiki/Ljung%E2%80%93Box_test). The null hypothesis is that the residual series is not autocorrelated. We want to fail to reject the null (i.e. have a p-value greater than 0.05). We can pass the `ljug_box()` function into the `features()` function to run this test. There are two parameters of the test we must define:
+
+1. Degrees of Freedom (`dof`): the number of parameters in the model (e.g. zero for Naive, p + q for ARIMA)
+2. Number of Lags Tested (`lag`): Dr. Hyndman suggests a value of 10 for non-seasonal data and 2 times the seasonal period for seasonal data (e.g. if monthly, 2 * 12 = 24)
+
+```{r eval=FALSE}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  augment() %>% 
+  features(.resid, ljung_box, dof = 2+1+1+2, lag = 2*12) 
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_arima_mbl %>% 
+  select(arima_auto) %>% 
+  augment() %>% 
+  features(.resid, ljung_box, dof = 2+1+1+2, lag = 2*12) %>%
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+# Forecast Accuracy
+
+The final step we can take is to forecast on out-of-sample data and check how accurate that forecast is. In general, what we want to do is:
+
+1. Separate some portion of the most recent data before fitting a model
+2. Train the model on the remaining data
+3. Calculate some accuracy metric using the training data
+4. Calculate some accuracy metric using the held-out data
+5. Compare the two accuracy metrics (we want them to be similar, showing that the model generalizes well to data it has not seen before)
+
+Whereas the information criteria can only be used to compare models of the same type, comparing accuracy can be done across model types. Commonly used accuracy measures include:
+
+* Mean Absolute Percentage Error [(MAPE)](https://en.wikipedia.org/wiki/Mean_absolute_percentage_error)
+* Root Mean Square Error [(RMSE)](https://en.wikipedia.org/wiki/Root-mean-square_deviation)
+* Mean Absolute Scaled Error [(MASE)](https://en.wikipedia.org/wiki/Mean_absolute_scaled_error)
+
+The accuracy on the training data can be calculated by passing the model straight into the `accuracy()` function.
+
+```{r eval=FALSE}
+victoria_dept_stores_tsbl %>% 
+  filter(year(Month) <= 2015) %>% 
+  model(arima = ARIMA(Turnover)) -> victoria_dept_stores_train_arima_mbl
+
+victoria_dept_stores_train_arima_mbl %>% 
+  accuracy() %>% 
+  select(.model, .type, MAPE, RMSE, MASE)
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_tsbl %>% 
+  filter(year(Month) <= 2015) %>% 
+  model(arima = ARIMA(Turnover)) -> victoria_dept_stores_train_arima_mbl
+
+victoria_dept_stores_train_arima_mbl %>% 
+  accuracy() %>% 
+  select(.model, .type, MAPE, RMSE, MASE) %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+The accuracy on the held out data takes an additional step. First, use the `forecast()` function to forecast over an arbitrary horizon, and then pass that `fable` into the `accuracy()` function, along with the training data.
+
+```{r eval=FALSE}
+victoria_dept_stores_tsbl %>% 
+  filter(year(Month) > 2015) %>% 
+  forecast(object = victoria_dept_stores_train_arima_mbl) %>% 
+  accuracy(victoria_dept_stores_tsbl) %>% 
+  select(.model, .type, MAPE, RMSE, MASE)
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_tsbl %>% 
+  filter(year(Month) > 2015) %>% 
+  forecast(object = victoria_dept_stores_train_arima_mbl) %>% 
+  accuracy(victoria_dept_stores_tsbl) %>% 
+  select(.model, .type, MAPE, RMSE, MASE) %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+# Recap
+
+The second day of the workshop focused on forecasting methods, model algorithms, validating those models, and producing and checking the accuracy of forecasts. We covered:
+
+1. Building baseline models
+2. Building more complex models
+3. Validating time-series models
+4. Producing forecasts
+5. Determining forecast accuracy
+
+Again, a big thanks to the Dr. Hyndman and and the `tidyverts` team for building these packages and putting together a fantastic workshop!
+
+# More Information
+
+The best source of additional information on the `tidyverts` ecosystem is the [official website](https://tidyverts.org/). 
+
+For more examples and explanations on the theoretical background of time-series forecasting, please see the [3rd Edition](https://otexts.com/fpp3/) of __Forecasting Practices and Principles__, co-authored by Dr. Rob Hyndman. This book goes into depth on most of the topics covered in the workshop. During the workshop, Dr. Hyndman mentioned that a new edition of the book would be coming out with updated `tidyverts` integration, but did not have a specific date available.
+
+Any issues with the packages in the `tidyverts` can be opened and tracked via their respective [GitHub repositories](https://github.com/tidyverts).
+
+Finally, the [RStudio Community](https://community.rstudio.com/) is a great place to ask for and receive help. There are several `tidyverts` questions already posted, and at least one of the package authors is known to be an active member.

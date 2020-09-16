@@ -1,0 +1,1480 @@
+<!DOCTYPE html>
+<html lang="en" itemscope itemtype="http://schema.org/WebPage">
+  <head>
+    
+
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+
+  <title>The rsample Package - Robert Lankford</title>
+  <meta name="description" content="
+
+
+
+
+The following is a demo of data splitting and resampling with the rsample package from the tidymodels ecosystem.
+">
+  <meta name="author" content="Robert Lankford"/><script type="application/ld+json">
+{
+    "@context": "http://schema.org",
+    "@type": "WebSite",
+    "name": "Robert Lankford",
+    
+    "url": "\/"
+}
+</script><script type="application/ld+json">
+{
+  "@context": "http://schema.org",
+  "@type": "Organization",
+  "name": "",
+  "url": "\/"
+  
+  
+  
+  
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "http://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [{
+        "@type": "ListItem",
+        "position": 1,
+        "item": {
+          "@id": "\/",
+          "name": "home"
+        }
+    },{
+        "@type": "ListItem",
+        "position": 3,
+        "item": {
+          "@id": "\/demo\/the-rsample-package\/",
+          "name": "The rsample package"
+        }
+    }]
+}
+</script><script type="application/ld+json">
+{
+  "@context": "http://schema.org",
+  "@type": "Article",
+  "author": {
+    "name" : "Robert Lankford"
+  },
+  "headline": "The rsample Package",
+  "description" : "\r\rThe following is a demo of data splitting and resampling with the rsample package from the tidymodels ecosystem.\n",
+  "inLanguage" : "en",
+  "wordCount":  5379 ,
+  "datePublished" : "2020-03-22T00:00:00",
+  "dateModified" : "2020-03-22T00:00:00",
+  "image" : "\/",
+  "keywords" : [ "R, modeling, resampling" ],
+  "mainEntityOfPage" : "\/demo\/the-rsample-package\/",
+  "publisher" : {
+    "@type": "Organization",
+    "name" : "\/",
+    "logo" : {
+        "@type" : "ImageObject",
+        "url" : "\/",
+        "height" :  60 ,
+        "width" :  60
+    }
+  }
+}
+</script>
+
+<meta property="og:title" content="The rsample Package" />
+<meta property="og:description" content="
+
+
+
+
+The following is a demo of data splitting and resampling with the rsample package from the tidymodels ecosystem.
+">
+<meta property="og:url" content="/demo/the-rsample-package/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Robert Lankford" />
+
+  <meta name="twitter:title" content="The rsample Package" />
+  <meta name="twitter:description" content="
+
+
+
+
+The following is a demo of data splitting and resampling with the rsample package from the tidymodels ecosystem.
+">
+  <meta name="twitter:card" content="summary" />
+  <meta name="generator" content="Hugo 0.74.3" />
+  <link rel="alternate" href="/index.xml" type="application/rss+xml" title="Robert Lankford"><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css" integrity="sha384-9eLZqc9ds8eNjO3TmqPeYcDj8n+Qfa4nuSiGYa6DjLNcv9BtN69ZIulL9+8CqC9Y" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css" integrity="sha384-B4dIYHKNBt8Bc12p+WXckhzcICo0wtJAoU8YZTY5qE0Id1GSseTk6S+L3BlXeVIU" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous"><link rel="stylesheet" href="/css/main.css" /><link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Lora:400,700,400italic,700italic" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300italic,400italic,600italic,700italic,800italic,400,300,600,700,800" /><link rel="stylesheet" href="/css/syntax.css" /><link rel="stylesheet" href="/css/codeblock.css" /><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/4.1.2/photoswipe.min.css" integrity="sha384-h/L2W9KefUClHWaty3SLE5F/qvc4djlyR4qY3NUV5HGQBBW7stbcfff1+I/vmsHh" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/4.1.2/default-skin/default-skin.min.css" integrity="sha384-iD0dNku6PYSIQLyfTOpB06F2KCZJAKLOThS5HRe8b3ibhdEQ6eKsFf/EeFxdOt5R" crossorigin="anonymous">
+
+
+
+  </head>
+  <body>
+    <nav class="navbar navbar-default navbar-fixed-top navbar-custom">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle" data-toggle="collapse" data-target="#main-navbar">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="/">Robert Lankford</a>
+    </div>
+
+    <div class="collapse navbar-collapse" id="main-navbar">
+      <ul class="nav navbar-nav navbar-right">
+        
+          
+            <li>
+              <a title="Blog" href="/blog/">Blog</a>
+            </li>
+          
+        
+          
+            <li class="navlinks-container">
+              <a class="navlinks-parent">About</a>
+              <div class="navlinks-children">
+                
+                  <a href="/about/">About Me</a>
+                
+                  <a href="/about/resume">Resume</a>
+                
+              </div>
+            </li>
+          
+        
+          
+            <li>
+              <a title="Demos" href="/demo/">Demos</a>
+            </li>
+          
+        
+
+        
+
+        
+      </ul>
+    </div>
+
+    
+
+  </div>
+</nav>
+
+
+
+
+    
+
+
+<div class="pswp" tabindex="-1" role="dialog" aria-hidden="true">
+
+<div class="pswp__bg"></div>
+
+<div class="pswp__scroll-wrap">
+    
+    <div class="pswp__container">
+      <div class="pswp__item"></div>
+      <div class="pswp__item"></div>
+      <div class="pswp__item"></div>
+    </div>
+    
+    <div class="pswp__ui pswp__ui--hidden">
+    <div class="pswp__top-bar">
+      
+      <div class="pswp__counter"></div>
+      <button class="pswp__button pswp__button--close" title="Close (Esc)"></button>
+      <button class="pswp__button pswp__button--share" title="Share"></button>
+      <button class="pswp__button pswp__button--fs" title="Toggle fullscreen"></button>
+      <button class="pswp__button pswp__button--zoom" title="Zoom in/out"></button>
+      
+      
+      <div class="pswp__preloader">
+        <div class="pswp__preloader__icn">
+          <div class="pswp__preloader__cut">
+            <div class="pswp__preloader__donut"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="pswp__share-modal pswp__share-modal--hidden pswp__single-tap">
+      <div class="pswp__share-tooltip"></div>
+    </div>
+    <button class="pswp__button pswp__button--arrow--left" title="Previous (arrow left)">
+    </button>
+    <button class="pswp__button pswp__button--arrow--right" title="Next (arrow right)">
+    </button>
+    <div class="pswp__caption">
+      <div class="pswp__caption__center"></div>
+    </div>
+    </div>
+    </div>
+</div>
+
+
+  
+  
+  
+
+
+
+
+
+
+  
+
+  <header class="header-section ">
+    
+    <div class="intro-header no-img">
+      <div class="container">
+        <div class="row">
+          <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+            <div class="demo-heading">
+              
+                <h1>The rsample Package</h1>
+              
+              
+                <hr class="small">
+              
+              
+              
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+
+    
+<div class="container" role="main">
+  <div class="row">
+    <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+      <article role="main" class="blog-post">
+        <div id="motivation" class="section level1">
+<h1>Motivation</h1>
+<p>This is the first in a series of demos I have given at my current job regarding the <a href="https://github.com/tidymodels"><code>tidymodels</code></a> packages and how I typically use them. While the ecosystem is still under development at the time of writing, it has reached a point where I find myself using it in place of my old R modeling pipelines (e.g. <a href="http://topepo.github.io/caret/index.html"><code>caret</code></a>).</p>
+<p>Much of the theory and application behind these packages that I will be discussing comes from a mixture of my own experience and <a href="http://appliedpredictivemodeling.com/">Applied Predictive Modeling</a>. Not by coincidence, this book is by <a href="https://github.com/topepo">Dr. Max Kuhn</a>, the lead author of <code>tidymodels</code>.</p>
+</div>
+<div id="starting-point" class="section level1">
+<h1>Starting Point</h1>
+<p>Broadly speaking, the first step in a modeling workflow (after the initial data collection, aggregation, exploration, etc.) is to separate the data into the training and testing sets. After that will be any necessary preprocessing, followed by modeling with some cross-validation or resampling strategy of the training data, validating the models on the testing set, and so on. The <a href="https://tidymodels.github.io/rsample/index.html"><code>rsample</code></a> package handles the data splitting and resampling.</p>
+<p>I will start off by loading the <code>rsample</code> package. The <code>dplyr</code> and <code>tidyr</code> packages will also be used.</p>
+<pre class="r"><code>library(rsample)
+
+library(dplyr)
+library(tidyr)</code></pre>
+<p>The data sets used come from the <code>modeldata</code> (for cross-sectional) and the <code>tsibbledata</code> (for time series) packages. Since we are just splitting and resampling, these very basic data sets will illustrate those points well. I will explore more interesting data sets in the preprocessing and modeling posts of this series.</p>
+<p>The <code>attrition</code> data from the <code>modeldata</code> package come from the IBM Watson Analytics Lab, and provide information on employee characteristics, such as age, education level, and gender. Typically, this data set is used in binary classification demonstrations as the outcome variable is whether the employee leaves his or her job; however, I will be using this data set with <code>MonthlyRate</code> as the outcome variable. In this scenario, we would want to see if a person’s attributes, such as age, education, and gender, can predict their monthly pay.</p>
+<pre class="r"><code>data(&quot;attrition&quot;, package = &quot;modeldata&quot;)
+
+attrition %&gt;% 
+  as_tibble() %&gt;% 
+  select(
+    MonthlyRate, Age, Education, Gender, YearsInCurrentRole, JobInvolvement, 
+    TotalWorkingYears
+  ) -&gt; cross_sect_data_tbl</code></pre>
+<pre><code>## Rows: 1,470
+## Columns: 7
+## $ MonthlyRate        &lt;int&gt; 19479, 24907, 2396, 23159, 16632, 11864, 9964, 1...
+## $ Age                &lt;int&gt; 41, 49, 37, 33, 27, 32, 59, 30, 38, 36, 35, 29, ...
+## $ Education          &lt;ord&gt; College, Below_College, College, Master, Below_C...
+## $ Gender             &lt;fct&gt; Female, Male, Male, Female, Male, Male, Female, ...
+## $ YearsInCurrentRole &lt;int&gt; 4, 7, 0, 7, 2, 7, 0, 0, 7, 7, 4, 5, 2, 2, 2, 9, ...
+## $ JobInvolvement     &lt;ord&gt; High, Medium, Medium, High, High, High, Very_Hig...
+## $ TotalWorkingYears  &lt;int&gt; 8, 10, 7, 8, 6, 8, 12, 1, 10, 17, 6, 10, 5, 3, 6...</code></pre>
+<p>The <code>nyc_bikes</code> data from the <code>tsibbledata</code> package come from <a href="citibikenyc.com">Citi Bike</a> and provide data on each trip for 10 bikes in NYC in 2018. Below, I have simplified the data set to show the duration (in minutes) that each bike was used each day. This gives us a time series with multiple subgroups. Two of the bike ids were removed because they span only a small fraction of time horizon that the other bikes do.</p>
+<pre class="r"><code>tsibbledata::nyc_bikes %&gt;% 
+  select(bike_id, start_time, stop_time) %&gt;% 
+  filter(!(bike_id %in% c(&quot;31681&quot;, &quot;31735&quot;))) %&gt;% 
+  mutate(
+    duration = stop_time - start_time,
+    date     = lubridate::as_date(start_time)
+  ) %&gt;% 
+  group_by(bike_id, date) %&gt;% 
+  summarize(duration = sum(duration)) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(duration = duration %&gt;% as.numeric() %&gt;% round(1)) %&gt;% 
+  arrange(date) -&gt; time_series_data_tbl</code></pre>
+<pre><code>## Rows: 1,157
+## Columns: 3
+## $ bike_id  &lt;fct&gt; 26301, 26301, 26301, 26301, 26301, 26301, 26301, 26301, 26...
+## $ date     &lt;date&gt; 2018-02-26, 2018-02-27, 2018-02-28, 2018-03-01, 2018-03-0...
+## $ duration &lt;dbl&gt; 4.6, 71.6, 14.9, 6.9, 14.9, 15.2, 22.3, 19.0, 33.4, 8.7, 2...</code></pre>
+</div>
+<div id="basic-traintest-splits" class="section level1">
+<h1>Basic Train/Test Splits</h1>
+<p>The most basic data splitting is simply separating your data into two groups.</p>
+<ol style="list-style-type: decimal">
+<li>The training set, on which the model(s) will be built and resampling will be done.</li>
+<li>The testing set, on which validation metrics will be calculated to, among other things, compare the performance of different modeling algorithms.</li>
+</ol>
+<p>While this process is simple, there are a few ways you can and should do it, depending on the characteristics of your data.</p>
+<div id="simple-initial-split" class="section level2">
+<h2>Simple Initial Split</h2>
+<p>A simple random split is the most straightforward way of splitting your data. The <code>initial_split()</code> function “creates a single binary split of the data”. In other words, it takes a simple random sample of the data, based on the <code>prop</code> argument (the proportion of the data you want in the training set), and splits the data into two groups. For example, if you set <code>prop</code> equal to 0.7, 70% of the data will be randomly put into the training set and the remaining 30% will be put into the testing set. Since the splitting is random, it is always a good idea to set a seed for reproducibility.</p>
+<pre class="r"><code>set.seed(1917)
+
+cross_sect_simple_rsplit &lt;- initial_split(
+  data = cross_sect_data_tbl, 
+  prop = 0.7
+)</code></pre>
+<p>The result of the <code>initial_split</code> function is an <code>rsplit</code> object. Printing an <code>rsplit</code> object will show:</p>
+<ol style="list-style-type: decimal">
+<li>The number of observations in the training set,</li>
+<li>The number of observations in the testing set, and</li>
+<li>The number of observations in the original data set</li>
+</ol>
+<pre><code>## &lt;Analysis/Assess/Total&gt;
+## &lt;1029/441/1470&gt;</code></pre>
+</div>
+<div id="time-based-initial-split" class="section level2">
+<h2>Time-Based Initial Split</h2>
+<p>A simple random sample is often fine for cross-sectional data, but it will most often not work for time series data. When a time component is introduced, you have to make sure that every data point in the training set occurs earlier in time than every data point in the testing set. In other words, you do not want to train a model “on the future” and validate it by predicting on data that happened “in the past”. You always want the training set to have occurred before the testing set.</p>
+<p>The <code>rsample</code> package provides the <code>initial_time_split()</code> function. This function takes in a proportion, just like <code>initial_split()</code>, but ensures that the proportional split occurs linearly in time. For example, if you had a year of data, and set <code>prop</code> equal to 0.7, the first 70% of the year would be in the training set, and the last 30% of the year would be in the testing set. Like with <code>initial_split()</code>, the output is an <code>rsplit</code> object and printing it shows the same three attributes.</p>
+<pre class="r"><code>time_series_data_rsplit &lt;- initial_time_split(
+  data = time_series_data_tbl, 
+  prop = 0.7
+)</code></pre>
+<pre><code>## &lt;Analysis/Assess/Total&gt;
+## &lt;809/348/1157&gt;</code></pre>
+<p>To check that this function worked as expected, we can extract the row indices of the training and testing sets. The training set row indices are contained in the <code>in_id</code> element of the <code>rsplit</code> object. We can use base R indexing of data frames to extract the training set, then negate the indices to get the testing set. Note that there is an easier way to do this that will be introduced later.</p>
+<pre class="r"><code>time_series_train_tbl &lt;- time_series_data_tbl[time_series_data_rsplit$in_id, ]
+time_series_test_tbl  &lt;- time_series_data_tbl[-time_series_data_rsplit$in_id, ]</code></pre>
+<p>Checking the min and max dates of the training and testing data shows that the breaking point between the two sets has been chosen correctly; that is, the entire training set happens before or at the breaking point and the entire testing set happens at or after the breaking point.</p>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+name
+</th>
+<th style="text-align:left;">
+value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Min Date in Training Data
+</td>
+<td style="text-align:left;">
+2018-02-26
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Max Date in Training Data
+</td>
+<td style="text-align:left;">
+2018-09-07
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Min Date in Testing Data
+</td>
+<td style="text-align:left;">
+2018-09-07
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Max Date in Testing Data
+</td>
+<td style="text-align:left;">
+2018-12-31
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="stratified-split" class="section level2">
+<h2>Stratified Split</h2>
+<p>In looking at cross-sectional data, a simple random sample may not be the best solution for the initial split.</p>
+<p>For classification problems, if the outcome classes are imbalanced (one value has many more observations that the other) then we run the risk of not having the same ratio of outcomes in both data sets. If the testing set had a much higher proportion of the majority class, the validation score calculated on it would be misleading and most likely indicate a better fit that what a properly balanced testing set would show.</p>
+<p>For regression, we may have an explanatory variable that is imbalanced. This could affect validation in much the same way as classification, we would have a non-representative sample of our population of interest.</p>
+<p>The <code>initial_split()</code> function contains a <code>strata</code> argument. Specifying one of the columns as the <code>strata</code> results in stratified random sampling within that variable. For example, if a binary variable had 90% one value and 10% another, the splitting algorithm would work to, as close as possible, produce a testing set and training set that both had the same 90/10 split for that variable.</p>
+<p>Since our outcome variable for the cross-sectional <code>attrition</code> data is continuous, we will look at the <code>Education</code> explanatory variable. This variable contains information on the education level of an employee and has 5 (ordinal) levels:</p>
+<ol style="list-style-type: decimal">
+<li>Below_College,</li>
+<li>College,</li>
+<li>Bachelor,</li>
+<li>Master, and</li>
+<li>Doctor</li>
+</ol>
+<p>Separating out the training and testing data from the <code>rsplit</code> object, we can take a look at the percent allocation of the <code>Education</code> variable for each set.</p>
+<pre class="r"><code>cross_sect_train_tbl &lt;- cross_sect_data_tbl[cross_sect_simple_rsplit$in_id, ]
+cross_sect_test_tbl  &lt;- cross_sect_data_tbl[-cross_sect_simple_rsplit$in_id, ]</code></pre>
+<div id="training-set" class="section level4">
+<h4>Training Set</h4>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Education
+</th>
+<th style="text-align:right;">
+n
+</th>
+<th style="text-align:right;">
+pct
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Below_College
+</td>
+<td style="text-align:right;">
+120
+</td>
+<td style="text-align:right;">
+0.12
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+College
+</td>
+<td style="text-align:right;">
+192
+</td>
+<td style="text-align:right;">
+0.19
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Bachelor
+</td>
+<td style="text-align:right;">
+418
+</td>
+<td style="text-align:right;">
+0.41
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Master
+</td>
+<td style="text-align:right;">
+268
+</td>
+<td style="text-align:right;">
+0.26
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Doctor
+</td>
+<td style="text-align:right;">
+31
+</td>
+<td style="text-align:right;">
+0.03
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="testing-set" class="section level4">
+<h4>Testing Set</h4>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Education
+</th>
+<th style="text-align:right;">
+n
+</th>
+<th style="text-align:right;">
+pct
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Below_College
+</td>
+<td style="text-align:right;">
+50
+</td>
+<td style="text-align:right;">
+0.11
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+College
+</td>
+<td style="text-align:right;">
+90
+</td>
+<td style="text-align:right;">
+0.20
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Bachelor
+</td>
+<td style="text-align:right;">
+154
+</td>
+<td style="text-align:right;">
+0.35
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Master
+</td>
+<td style="text-align:right;">
+130
+</td>
+<td style="text-align:right;">
+0.29
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Doctor
+</td>
+<td style="text-align:right;">
+17
+</td>
+<td style="text-align:right;">
+0.04
+</td>
+</tr>
+</tbody>
+</table>
+<p>Some of the levels are fairly close, but Bachelor has about a 6% difference between the two sets. Likewise, Master has about a 3% difference. While this not seem like much, we want the distribution to be as close as possible. If it is possible to get it closer we should try to do so. Below, we can see what happens when we assign “Education” as the <code>strata</code> in the <code>initial_split()</code> function.</p>
+<pre class="r"><code>set.seed(1917)
+
+cross_sect_strat_rsplit &lt;- initial_split(
+  data   = cross_sect_data_tbl, 
+  prop   = 0.7, 
+  strata = &quot;Education&quot;
+)
+
+cross_sect_strat_train_tbl &lt;- cross_sect_data_tbl[cross_sect_strat_rsplit$in_id, ]
+cross_sect_strat_test_tbl  &lt;- cross_sect_data_tbl[-cross_sect_strat_rsplit$in_id, ]</code></pre>
+</div>
+<div id="training-set-1" class="section level4">
+<h4>Training Set</h4>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Education
+</th>
+<th style="text-align:right;">
+n
+</th>
+<th style="text-align:right;">
+pct
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Below_College
+</td>
+<td style="text-align:right;">
+119
+</td>
+<td style="text-align:right;">
+0.12
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+College
+</td>
+<td style="text-align:right;">
+200
+</td>
+<td style="text-align:right;">
+0.19
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Bachelor
+</td>
+<td style="text-align:right;">
+399
+</td>
+<td style="text-align:right;">
+0.39
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Master
+</td>
+<td style="text-align:right;">
+280
+</td>
+<td style="text-align:right;">
+0.27
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Doctor
+</td>
+<td style="text-align:right;">
+33
+</td>
+<td style="text-align:right;">
+0.03
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="testing-set-1" class="section level4">
+<h4>Testing Set</h4>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Education
+</th>
+<th style="text-align:right;">
+n
+</th>
+<th style="text-align:right;">
+pct
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Below_College
+</td>
+<td style="text-align:right;">
+51
+</td>
+<td style="text-align:right;">
+0.12
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+College
+</td>
+<td style="text-align:right;">
+82
+</td>
+<td style="text-align:right;">
+0.19
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Bachelor
+</td>
+<td style="text-align:right;">
+173
+</td>
+<td style="text-align:right;">
+0.39
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Master
+</td>
+<td style="text-align:right;">
+118
+</td>
+<td style="text-align:right;">
+0.27
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Doctor
+</td>
+<td style="text-align:right;">
+15
+</td>
+<td style="text-align:right;">
+0.03
+</td>
+</tr>
+</tbody>
+</table>
+<p>Now, Bachelor and Master has the same percent allocation in each set. Notice though that the other three values do not have the same percent allocations; however, they are all within ~2%, which is lower than the 3% before the <code>strata</code> argument was used. This is usually because there are not enough data points to get all values to be exactly the same allocation.</p>
+</div>
+</div>
+<div id="train-and-test-data" class="section level2">
+<h2>Train and Test Data</h2>
+<p>Up until this point I have been manually determining the training and testing sets by extracting the <code>in_id</code> out of the <code>rsplit</code> object and using base R to filter the appropriate rows from the original data set to get the training data, and then negating those indexes to get the testing data. The <code>rsample</code> package provides the <code>training()</code> and <code>testing()</code> functions to automate these extractions. Below, you can see that either way results in the same data set.</p>
+<pre class="r"><code>cross_sect_train_tbl    &lt;- cross_sect_data_tbl[cross_sect_strat_rsplit$in_id, ]
+cross_sect_training_tbl &lt;- training(cross_sect_strat_rsplit)
+
+all_equal(cross_sect_train_tbl, cross_sect_training_tbl)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<pre class="r"><code>cross_sect_test_tbl    &lt;- cross_sect_data_tbl[-cross_sect_strat_rsplit$in_id, ]
+cross_sect_testing_tbl &lt;- testing(cross_sect_strat_rsplit)
+
+all_equal(cross_sect_test_tbl, cross_sect_testing_tbl)</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+</div>
+</div>
+<div id="resampling-techniques" class="section level1">
+<h1>Resampling Techniques</h1>
+<p>After we do the initial train/test split on a data set, we will typically do some exploratory data analysis (EDA) and some preprocessing to the training set before moving into trying out some modeling algorithms. Since we are looking at the <code>rsample</code> package right now, we will skip ahead to the resampling portion and visit the other steps in different posts.</p>
+<p>Resampling is the process drawing multiple samples from an original data set. There are various flavors of resampling, some with replacement (i.e. you randomly draw an observation, put it back, and randomly draw again, so it is possible you have duplicate observations) and some without replacement (i.e. the final resampled set will be some unique subset of the original data).</p>
+<p>Some of the resampling techniques I will discuss below are:</p>
+<ul>
+<li>k-fold cross-validation</li>
+<li>leave-one-out cross-validation</li>
+<li>Monto-Carlo cross-validation</li>
+<li>bootstrapping</li>
+</ul>
+<div id="k-fold-cross-validation" class="section level2">
+<h2>k-Fold Cross-Validation</h2>
+<p>Probably the most famous resampling technique used in data science is k-fold cross-validation. It is a straightforward process:</p>
+<ol style="list-style-type: decimal">
+<li>The data set is split <em>k</em> times into similar-sized chunks (folds)</li>
+<li>All but one of the folds is combined into a data set</li>
+<li>A model is built on the data set from step 2</li>
+<li>The unused fold is fed into the model and predictions are generated</li>
+<li>Those predictions are used to calculate a desired performance metric</li>
+</ol>
+<p>This process is repeated until all of the folds have been held out and used for predictions one time each. The resulting <em>k</em> performance metrics are then summarized (usually by taking the average, but other aggregations are available) and a final performance metrics for the cross-validation is reported.</p>
+<p>To create <em>k</em> folds using the <code>rsample</code> package, the <code>vfold_cv()</code> function is used. The <code>v</code> (same thing as <em>k</em>) argument specifies how many folds, and the <code>repeats</code> argument allows for the cross-validation to be repeated a certain number of times, with a new batch of <em>k</em> folds randomly generated each time. Like the <code>initial_split()</code> function, you can choose a variable to do a stratified random sample. Also like the <code>initial_split()</code> function, these are random samples, so setting a seed is advised.</p>
+<pre class="r"><code>set.seed(1914)
+
+cross_sect_vfold_rsplit &lt;- vfold_cv(
+  data    = cross_sect_training_tbl, 
+  v       = 5, 
+  repeats = 1,
+  strata  = &quot;Education&quot;
+)</code></pre>
+<p>Printing out the returned <code>rset</code> object prints the number of folds as well as the <code>split</code> objects and the <code>id</code> of each fold in a data frame. The <code>split</code> object shows how many observations are in the <code>k - 1</code> folds that would be used to train a model, and how many observations are in the held-out fold.</p>
+<pre><code>## #  5-fold cross-validation using stratification 
+## # A tibble: 5 x 2
+##   splits            id   
+##   &lt;list&gt;            &lt;chr&gt;
+## 1 &lt;split [823/208]&gt; Fold1
+## 2 &lt;split [824/207]&gt; Fold2
+## 3 &lt;split [825/206]&gt; Fold3
+## 4 &lt;split [826/205]&gt; Fold4
+## 5 &lt;split [826/205]&gt; Fold5</code></pre>
+</div>
+<div id="leave-one-out-cross-validation" class="section level2">
+<h2>Leave-One-Out Cross-Validation</h2>
+<p>Leave-one-out cross-validation (LOOCV) is a special case of k-fold cross-validation where <em>k</em> is equal to the number of observations in the training set. So each iteration results in a model trained on all but one of the observations and a performance metric calculated from the prediction of the single held-out observation. The resulting summarized performance metric can be thought of as the average (or median, maximum, or any aggregation metric you choose) performance across each observation individually.</p>
+<p>The <code>rsample</code> package provides the <code>loo_cv()</code> function. The only argument is the data set.</p>
+<pre class="r"><code>cross_sect_loocv_rsplit &lt;- loo_cv(cross_sect_train_tbl)</code></pre>
+<p>Printing out the resulting <code>rset</code> object prints that it is LOOCV, the <code>split</code> objects and the resample <code>id</code>s. Notice that, as expected, the <code>split</code> object shows that there is one observation (on the right side) held out on which to calculate a performance metric for each resample.</p>
+<pre><code>## # Leave-one-out cross-validation 
+## # A tibble: 1,031 x 2
+##    splits         id        
+##    &lt;list&gt;         &lt;chr&gt;     
+##  1 &lt;split [1K/1]&gt; Resample1 
+##  2 &lt;split [1K/1]&gt; Resample2 
+##  3 &lt;split [1K/1]&gt; Resample3 
+##  4 &lt;split [1K/1]&gt; Resample4 
+##  5 &lt;split [1K/1]&gt; Resample5 
+##  6 &lt;split [1K/1]&gt; Resample6 
+##  7 &lt;split [1K/1]&gt; Resample7 
+##  8 &lt;split [1K/1]&gt; Resample8 
+##  9 &lt;split [1K/1]&gt; Resample9 
+## 10 &lt;split [1K/1]&gt; Resample10
+## # ... with 1,021 more rows</code></pre>
+</div>
+<div id="monte-carlo-cross-validation" class="section level2">
+<h2>Monte-Carlo Cross-Validation</h2>
+<p>Monte-Carlo cross-validation involves randomly selecting (<strong>without</strong> replacement) some proportion of the training data to build the model and assigned the non-selected observations to the set on which the validation metric will be calculated. This process is then repeated a certain number of times to get that number of resamples. Like with k-fold cross-validation, the final performance metrics is summarized across all resamples. What makes Monte-Carlo cross-validation interesting is that, since the resamples are randomly sampled, it is possible that a single observation may end up in all the trained models, or it may end up in none of them.</p>
+<p>We can do a Monte-Carlo cross-validation resample by using the <code>mc_cv()</code> function in the <code>rsample</code> package. The <code>prop</code> argument specifies how much of the data you want to go towards model training, and the <code>times</code> argument dictates how many resamples will be done. Note that again there is a <code>strata</code> argument for stratified random sampling. Again, setting a seed for random sampling is a good practice.</p>
+<pre class="r"><code>set.seed(1914)
+
+cross_sect_monte_carlo_resplit &lt;- mc_cv(
+  data   = cross_sect_training_tbl,
+  prop   = 0.7,
+  times  = 50,
+  strata = &quot;Education&quot;
+)</code></pre>
+<p>Printing out the resulting <code>rset</code> object will tell you that it is a Monte-Carlo Cross-Validation, what the percentage split is, and how many resamples were taken. Additionally, you will again see the <code>split</code> objects and the resample <code>id</code>s.</p>
+<pre><code>## # Monte Carlo cross-validation (0.7/0.3) with 50 resamples  using stratification 
+## # A tibble: 50 x 2
+##    splits            id        
+##    &lt;list&gt;            &lt;chr&gt;     
+##  1 &lt;split [724/307]&gt; Resample01
+##  2 &lt;split [724/307]&gt; Resample02
+##  3 &lt;split [724/307]&gt; Resample03
+##  4 &lt;split [724/307]&gt; Resample04
+##  5 &lt;split [724/307]&gt; Resample05
+##  6 &lt;split [724/307]&gt; Resample06
+##  7 &lt;split [724/307]&gt; Resample07
+##  8 &lt;split [724/307]&gt; Resample08
+##  9 &lt;split [724/307]&gt; Resample09
+## 10 &lt;split [724/307]&gt; Resample10
+## # ... with 40 more rows</code></pre>
+</div>
+<div id="bootstrap" class="section level2">
+<h2>Bootstrap</h2>
+<p>The bootstrap is similar to Monte-Carlo, except that the random samples are taken <strong>with</strong> replacement. Additionally, each bootstrap resample will result in a sample that is the same number of rows as the original data set. This means that any given observation could appear multiple times in the data set used to train the model, once, or not at all. The held-out data are the data points that were not included in the bootstrap resample.</p>
+<p>We can do a bootstrap resample by using the <code>boostraps()</code> function in the <code>rsample</code> package. The <code>times</code> argument is the number of bootstrap samples to take (analogous to the number of folds to create). For example, if <code>times</code> is 25, then a random sample, with replacement, that is the same size as the original data set will be taken 25 times. Note that again there is a <code>strata</code> argument for stratified random sampling and we should set a seed.</p>
+<pre class="r"><code>set.seed(1914)
+
+cross_sect_bootstrap_rsplit &lt;- bootstraps(
+  data   = cross_sect_training_tbl,
+  times  = 50,
+  strata = &quot;Education&quot;
+)</code></pre>
+<p>Printing out the resulting <code>rset</code> object will tell you that it is a Bootstrap sampling. Additionally, you will again see the <code>split</code> objects and the resample <code>id</code>s.</p>
+<pre><code>## # Bootstrap sampling using stratification 
+## # A tibble: 50 x 2
+##    splits           id         
+##    &lt;list&gt;           &lt;chr&gt;      
+##  1 &lt;split [1K/374]&gt; Bootstrap01
+##  2 &lt;split [1K/389]&gt; Bootstrap02
+##  3 &lt;split [1K/376]&gt; Bootstrap03
+##  4 &lt;split [1K/376]&gt; Bootstrap04
+##  5 &lt;split [1K/378]&gt; Bootstrap05
+##  6 &lt;split [1K/364]&gt; Bootstrap06
+##  7 &lt;split [1K/381]&gt; Bootstrap07
+##  8 &lt;split [1K/374]&gt; Bootstrap08
+##  9 &lt;split [1K/384]&gt; Bootstrap09
+## 10 &lt;split [1K/366]&gt; Bootstrap10
+## # ... with 40 more rows</code></pre>
+</div>
+<div id="traintest-vs-analysisassessment" class="section level2">
+<h2>Train/Test vs Analysis/Assessment</h2>
+<p>I have been very careful in using the phrases <em>“training data”</em> and <em>“testing data”</em>. Historically, <em>training data</em> is the larger portion of the data after the <strong>initial</strong> split and <em>testing data</em> is the smaller portion. A more undefined area is what to call the two portions of the training data when they are split during resampling. For example, for 10-fold cross-validation, what should one call the 9 folds used to train the model and the single fold used to calculate the performance metric?</p>
+<p>Dr. Kuhn and the <code>tidymodels</code> team have proposed using the terms <em>“analysis data”</em> and <em>“assessment data”</em> to solve this nomenclature problem. The <em>analysis data</em> is the data from the resample that is used to train a model and the <em>assessment data</em> is the data from the resample that is used to calculate the performance metric. This way, we can keep training/testing and analysis/assessment separate from each other.</p>
+<p>Looking back at the 5-fold cross-validation the cross-sectional data, there are, of course, 5 folds:</p>
+<pre class="r"><code>cross_sect_vfold_rsplit</code></pre>
+<pre><code>## #  5-fold cross-validation using stratification 
+## # A tibble: 5 x 2
+##   splits            id   
+##   &lt;list&gt;            &lt;chr&gt;
+## 1 &lt;split [823/208]&gt; Fold1
+## 2 &lt;split [824/207]&gt; Fold2
+## 3 &lt;split [825/206]&gt; Fold3
+## 4 &lt;split [826/205]&gt; Fold4
+## 5 &lt;split [826/205]&gt; Fold5</code></pre>
+<p>Next, we can access the splits using <code>$splits</code>:</p>
+<pre class="r"><code>cross_sect_vfold_rsplit$splits</code></pre>
+<pre><code>## [[1]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;823/208/1031&gt;
+## 
+## [[2]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;824/207/1031&gt;
+## 
+## [[3]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;825/206/1031&gt;
+## 
+## [[4]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;826/205/1031&gt;
+## 
+## [[5]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;826/205/1031&gt;</code></pre>
+<p>Further, we can access the split object itself by specifying its number:</p>
+<pre class="r"><code>cross_sect_vfold_rsplit$splits[[1]]</code></pre>
+<pre><code>## &lt;Analysis/Assess/Total&gt;
+## &lt;823/208/1031&gt;</code></pre>
+<p>Of course, there is more than one way to pull out a split object:</p>
+<pre class="r"><code>cross_sect_vfold_rsplit %&gt;% 
+  purrr::pluck(&quot;splits&quot;)</code></pre>
+<pre><code>## [[1]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;823/208/1031&gt;
+## 
+## [[2]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;824/207/1031&gt;
+## 
+## [[3]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;825/206/1031&gt;
+## 
+## [[4]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;826/205/1031&gt;
+## 
+## [[5]]
+## &lt;Analysis/Assess/Total&gt;
+## &lt;826/205/1031&gt;</code></pre>
+<pre class="r"><code>cross_sect_vfold_rsplit %&gt;% 
+  purrr::pluck(1, 1)</code></pre>
+<pre><code>## &lt;Analysis/Assess/Total&gt;
+## &lt;823/208/1031&gt;</code></pre>
+<p>Once we have the split object isolated, we can use the <code>analysis()</code> and <code>assessment()</code> functions from <code>rsample</code> to get the respective data sets.</p>
+<pre class="r"><code>cross_sect_vfold_rsplit %&gt;% 
+  purrr::pluck(1, 1) %&gt;% 
+  analysis() %&gt;% 
+  glimpse()</code></pre>
+<pre><code>## Rows: 823
+## Columns: 7
+## $ MonthlyRate        &lt;int&gt; 19479, 23159, 11864, 9964, 8787, 15170, 8758, 12...
+## $ Age                &lt;int&gt; 41, 33, 32, 59, 38, 31, 34, 28, 29, 32, 53, 38, ...
+## $ Education          &lt;ord&gt; College, Master, College, Bachelor, Bachelor, Be...
+## $ Gender             &lt;fct&gt; Female, Female, Male, Female, Male, Male, Male, ...
+## $ YearsInCurrentRole &lt;int&gt; 4, 7, 7, 0, 7, 2, 2, 2, 9, 2, 8, 2, 2, 6, 2, 7, ...
+## $ JobInvolvement     &lt;ord&gt; High, High, High, Very_High, Medium, High, High,...
+## $ TotalWorkingYears  &lt;int&gt; 8, 8, 8, 12, 10, 5, 3, 6, 10, 7, 31, 6, 5, 13, 8...</code></pre>
+<pre class="r"><code>cross_sect_vfold_rsplit %&gt;% 
+  purrr::pluck(1, 1) %&gt;% 
+  assessment() %&gt;% 
+  glimpse()</code></pre>
+<pre><code>## Rows: 208
+## Columns: 7
+## $ MonthlyRate        &lt;int&gt; 13335, 6986, 10034, 10227, 19294, 15146, 2689, 2...
+## $ Age                &lt;int&gt; 30, 36, 34, 37, 48, 33, 37, 36, 31, 45, 30, 56, ...
+## $ Education          &lt;ord&gt; Below_College, Master, Master, College, College,...
+## $ Gender             &lt;fct&gt; Male, Male, Male, Male, Male, Female, Male, Male...
+## $ YearsInCurrentRole &lt;int&gt; 0, 3, 5, 0, 0, 14, 5, 0, 1, 0, 8, 4, 7, 4, 3, 3,...
+## $ JobInvolvement     &lt;ord&gt; High, Medium, High, High, Medium, High, Medium, ...
+## $ TotalWorkingYears  &lt;int&gt; 1, 10, 10, 8, 23, 15, 7, 2, 1, 17, 10, 37, 11, 5...</code></pre>
+</div>
+</div>
+<div id="other-utilities" class="section level1">
+<h1>Other Utilities</h1>
+<p>The following sections contain interesting functions that the <code>rsample</code> package provides which do not fit cleanly into any of the above sections.</p>
+<div id="nested-resamples" class="section level2">
+<h2>Nested Resamples</h2>
+<p>The <code>rsample</code> package has an interesting function, <code>nested_cv()</code>, that allows you to resample a data set, and then resample those resamples. For example, you could 10-fold cross-validate your training data (use the <code>outside</code> argument) and then do a bootstrap resample to each of the 10 folds (use the <code>inside</code> argument).</p>
+<pre class="r"><code>set.seed(1914)
+
+cross_sect_nested_rsplit &lt;- nested_cv(
+  data    = cross_sect_training_tbl,
+  outside = vfold_cv(v = 10, strata = &quot;Education&quot;),
+  inside  = bootstraps(times = 30, strata = &quot;Education&quot;)
+)</code></pre>
+<pre><code>## # Nested resampling:
+## #  outer: 10-fold cross-validation using stratification
+## #  inner: Bootstrap sampling using stratification
+## # A tibble: 10 x 3
+##    splits            id     inner_resamples  
+##    &lt;list&gt;            &lt;chr&gt;  &lt;list&gt;           
+##  1 &lt;split [926/105]&gt; Fold01 &lt;tibble [30 x 2]&gt;
+##  2 &lt;split [926/105]&gt; Fold02 &lt;tibble [30 x 2]&gt;
+##  3 &lt;split [927/104]&gt; Fold03 &lt;tibble [30 x 2]&gt;
+##  4 &lt;split [928/103]&gt; Fold04 &lt;tibble [30 x 2]&gt;
+##  5 &lt;split [928/103]&gt; Fold05 &lt;tibble [30 x 2]&gt;
+##  6 &lt;split [928/103]&gt; Fold06 &lt;tibble [30 x 2]&gt;
+##  7 &lt;split [929/102]&gt; Fold07 &lt;tibble [30 x 2]&gt;
+##  8 &lt;split [929/102]&gt; Fold08 &lt;tibble [30 x 2]&gt;
+##  9 &lt;split [929/102]&gt; Fold09 &lt;tibble [30 x 2]&gt;
+## 10 &lt;split [929/102]&gt; Fold10 &lt;tibble [30 x 2]&gt;</code></pre>
+<p>Each of the original 10 splits had 30 bootstrap samples taken and placed in the <code>inner_resamples</code> column. THe first fold in the <code>splits</code> column has 927 observations in the analysis data set. Taking the inner resample for that first split shows 30 bootstrap splits, each with 927 observations in its analysis set, as would be expected.</p>
+<pre class="r"><code>cross_sect_nested_rsplit$inner_resamples[[1]]</code></pre>
+<pre><code>## # Bootstrap sampling using stratification 
+## # A tibble: 30 x 2
+##    splits            id         
+##    &lt;list&gt;            &lt;chr&gt;      
+##  1 &lt;split [926/339]&gt; Bootstrap01
+##  2 &lt;split [926/341]&gt; Bootstrap02
+##  3 &lt;split [926/344]&gt; Bootstrap03
+##  4 &lt;split [926/339]&gt; Bootstrap04
+##  5 &lt;split [926/346]&gt; Bootstrap05
+##  6 &lt;split [926/337]&gt; Bootstrap06
+##  7 &lt;split [926/329]&gt; Bootstrap07
+##  8 &lt;split [926/330]&gt; Bootstrap08
+##  9 &lt;split [926/332]&gt; Bootstrap09
+## 10 &lt;split [926/344]&gt; Bootstrap10
+## # ... with 20 more rows</code></pre>
+<pre class="r"><code>cross_sect_nested_rsplit %&gt;% 
+  select(inner_resamples) %&gt;% 
+  slice(1) %&gt;% 
+  unnest(inner_resamples) %&gt;% 
+  purrr::pluck(1, 1) %&gt;% 
+  analysis()</code></pre>
+<pre><code>## # A tibble: 926 x 7
+##    MonthlyRate   Age Education Gender YearsInCurrentR~ JobInvolvement
+##          &lt;int&gt; &lt;int&gt; &lt;ord&gt;     &lt;fct&gt;             &lt;int&gt; &lt;ord&gt;         
+##  1        8787    38 Bachelor  Male                  7 Medium        
+##  2        3020    24 Bachelor  Male                  0 High          
+##  3        3020    24 Bachelor  Male                  0 High          
+##  4       11031    35 Doctor    Male                  8 High          
+##  5       11031    35 Doctor    Male                  8 High          
+##  6       19730    55 Bachelor  Female                0 High          
+##  7       19730    55 Bachelor  Female                0 High          
+##  8       19730    55 Bachelor  Female                0 High          
+##  9       22656    36 Bachelor  Male                  5 Medium        
+## 10       26278    35 Bachelor  Male                  4 Medium        
+## # ... with 916 more rows, and 1 more variable: TotalWorkingYears &lt;int&gt;</code></pre>
+</div>
+<div id="tidy-rsplit-objects-and-plotting-resamples" class="section level2">
+<h2>Tidy <code>rsplit</code> Objects and Plotting Resamples</h2>
+<p>The <code>rsplit</code>, <code>rset</code>, <code>vfold_cv</code>, and <code>nested_cv</code> objects all have methods for the <code>tidy()</code> function. It unpacks the <code>split</code> objects, puts them into a tidy tibble format, and shows which row corresponds to which data set (analysis or assessment).</p>
+<pre class="r"><code>cross_sect_simple_rsplit %&gt;% 
+  tidy() %&gt;% 
+  filter(Data == &quot;Analysis&quot;)</code></pre>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:right;">
+Row
+</th>
+<th style="text-align:left;">
+Data
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right;">
+1
+</td>
+<td style="text-align:left;">
+Analysis
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+5
+</td>
+<td style="text-align:left;">
+Analysis
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+6
+</td>
+<td style="text-align:left;">
+Analysis
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+7
+</td>
+<td style="text-align:left;">
+Analysis
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+8
+</td>
+<td style="text-align:left;">
+Analysis
+</td>
+</tr>
+</tbody>
+</table>
+<pre class="r"><code>cross_sect_simple_rsplit %&gt;% 
+  tidy() %&gt;% 
+  filter(Data == &quot;Assessment&quot;)</code></pre>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:right;">
+Row
+</th>
+<th style="text-align:left;">
+Data
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right;">
+2
+</td>
+<td style="text-align:left;">
+Assessment
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+3
+</td>
+<td style="text-align:left;">
+Assessment
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+4
+</td>
+<td style="text-align:left;">
+Assessment
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:left;">
+Assessment
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+15
+</td>
+<td style="text-align:left;">
+Assessment
+</td>
+</tr>
+</tbody>
+</table>
+<p>On it’s own, this is not terribly interesting; however, it can be very useful if you want to visually check which portions of your data are in which set (for example, to make sure the split was truly random). The following code is taken directly from the <a href="https://tidymodels.github.io/rsample/reference/tidy.rsplit.html">rsample website</a>, but it would be the same approach in almost every situation where you would want to do this.</p>
+<pre class="r"><code>library(ggplot2)
+
+cross_sect_vfold_rsplit %&gt;%
+  tidy() %&gt;% 
+  ggplot(aes(x = Fold, y = Row, fill = Data)) +
+  geom_tile() +
+  scale_fill_brewer() +
+  theme_bw()</code></pre>
+<p><img src="/demo/2020-03-22-the-rsample-package_files/figure-html/unnamed-chunk-42-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>We can see that there are a few pockets of closely selected Assessment data, but overall the distribution of the 5 folds looks randomly split into the Analysis and Assessment sets.</p>
+</div>
+</div>
+<div id="rolling-time-windows" class="section level1">
+<h1>Rolling Time Windows</h1>
+<p>The last <code>rsample</code> function I want to discuss is the <code>rolling_origin()</code> function for rolling time windows. Earlier I talked about the <code>initial_time_split()</code> function that splits a time series linearly in time, so earlier observations were in the training set and later observations were in the testing set. Often in time-series modeling we want to have a “rolling window”. This is a popular method for cross-validating time-series models. The chapter on time-series cross-validation in <a href="https://otexts.com/fpp3/tscv.html">Forecasting Practices and Principles</a> by Dr. Rob Hyndman describes this process very well. Essentially, we want to steadily move the observations in the training and testing sets later in time as we resample. The first resample will contain the earliest observations and the last resample will contain the latest. We can have either cumulative or non-cumulative rolling windows, as will be shown below.</p>
+<p>I will use the same time series data as in the Time-Based Initial split section. To make things simple, I will also filter down to just one of the bikes, id 26301.</p>
+<table class="table" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+bike_id
+</th>
+<th style="text-align:left;">
+date
+</th>
+<th style="text-align:right;">
+duration
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-02-26
+</td>
+<td style="text-align:right;">
+4.6
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-02-27
+</td>
+<td style="text-align:right;">
+71.6
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-02-28
+</td>
+<td style="text-align:right;">
+14.9
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-03-01
+</td>
+<td style="text-align:right;">
+6.9
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-03-03
+</td>
+<td style="text-align:right;">
+14.9
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-03-04
+</td>
+<td style="text-align:right;">
+15.2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-03-05
+</td>
+<td style="text-align:right;">
+22.3
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-03-06
+</td>
+<td style="text-align:right;">
+19.0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-03-08
+</td>
+<td style="text-align:right;">
+33.4
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+26301
+</td>
+<td style="text-align:left;">
+2018-03-10
+</td>
+<td style="text-align:right;">
+23.4
+</td>
+</tr>
+</tbody>
+</table>
+<div id="cumulative-roll" class="section level2">
+<h2>Cumulative Roll</h2>
+<p>We can take a “rolling sample” where we take some number of observations, starting at the origin, and put them in the training/analysis data set. We then take the very next chronological observation and place it in testing/assessment data set. Setting the <code>cumulative</code> argument to <code>TRUE</code> anchors the roll at the origin so that each subsequent resample takes the previous resample’s testing/assessment data set observation, places it in the training/analysis data set, and takes the next chronological observation in the original data set as the new testing/assessment data set. The plot below shows how this resampling method works.</p>
+<pre class="r"><code>time_series_data_tbl %&gt;% 
+  filter(bike_id == &quot;26301&quot;) %&gt;% 
+  arrange(date) %&gt;% 
+  rolling_origin(
+    initial    = 7, 
+    cumulative = TRUE
+  ) -&gt; time_series_rolling_cumul_rsplit</code></pre>
+<p><img src="/demo/2020-03-22-the-rsample-package_files/figure-html/unnamed-chunk-45-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>The x-axis above is the index of the rows in chronological order. So row 1 is the earliest observation, row 2 is the second earliest, etc. The first slice <code>Slice001</code> at the very top has the 7 earliest observations in the training/analysis (because I set the <code>initial</code> argument to 7) and the 8th earliest observation in the testing/assessment set. Since <code>cumulative</code> is set to <code>TRUE</code>, each new slice’s analysis set grows by 1, remaining anchored to the earliest observation.</p>
+<p>Like with the other resampling techniques, you can pass the <code>split</code> object into the <code>analysis()</code> and <code>assessment()</code> functions to get the respective data set. Using the <code>training()</code> and <code>testing()</code> functions would yield the same results. The example below shows the first split, which is the first 7 chronological observations in the training/analysis set and the 8th in the testing/assessment set.</p>
+<pre class="r"><code>time_series_rolling_cumul_rsplit$splits[[1]] %&gt;% analysis()</code></pre>
+<pre><code>## # A tibble: 7 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-02-26      4.6
+## 2 26301   2018-02-27     71.6
+## 3 26301   2018-02-28     14.9
+## 4 26301   2018-03-01      6.9
+## 5 26301   2018-03-03     14.9
+## 6 26301   2018-03-04     15.2
+## 7 26301   2018-03-05     22.3</code></pre>
+<pre class="r"><code>time_series_rolling_cumul_rsplit$splits[[1]] %&gt;% assessment()</code></pre>
+<pre><code>## # A tibble: 1 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-03-06       19</code></pre>
+<p>Checking the 2nd split shows the 8th observation added to the training/analysis set and the 9th replacing it as the testing/assessment set.</p>
+<pre class="r"><code>time_series_rolling_cumul_rsplit$splits[[2]] %&gt;% analysis()</code></pre>
+<pre><code>## # A tibble: 8 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-02-26      4.6
+## 2 26301   2018-02-27     71.6
+## 3 26301   2018-02-28     14.9
+## 4 26301   2018-03-01      6.9
+## 5 26301   2018-03-03     14.9
+## 6 26301   2018-03-04     15.2
+## 7 26301   2018-03-05     22.3
+## 8 26301   2018-03-06     19</code></pre>
+<pre class="r"><code>time_series_rolling_cumul_rsplit$splits[[2]] %&gt;% assessment()</code></pre>
+<pre><code>## # A tibble: 1 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-03-08     33.4</code></pre>
+</div>
+<div id="non-cumulative-roll" class="section level2">
+<h2>Non-Cumulative Roll</h2>
+<p>Setting the <code>cumulative</code> argument to <code>FALSE</code> puts the <em>rolling</em> in <em>rolling time window</em>. That is, when we move to the next slice, the earliest observation in the training/analysis set is dropped when the previous slice’s testing/assessment set observation is added to the training/analysis set. The plot below shows this.</p>
+<pre class="r"><code>time_series_data_tbl %&gt;% 
+  filter(bike_id == &quot;26301&quot;) %&gt;% 
+  arrange(date) %&gt;% 
+  rolling_origin(
+    initial    = 7, 
+    cumulative = FALSE
+  ) -&gt; time_series_rolling_noncumul_rsplit</code></pre>
+<p><img src="/demo/2020-03-22-the-rsample-package_files/figure-html/unnamed-chunk-51-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>As seen above, the time window stays the same size for reach slice and moves in time by one period each resample. Doing this keeps the training/analysis set the same size for each slice, where setting the <code>cumulative</code> argument to <code>TRUE</code> increases the size of the training/analysis set by one for each slice.</p>
+<p>We can again see the training/analysis and testing/assessment sets for the first slice.</p>
+<pre class="r"><code>time_series_rolling_noncumul_rsplit$splits[[1]] %&gt;% analysis()</code></pre>
+<pre><code>## # A tibble: 7 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-02-26      4.6
+## 2 26301   2018-02-27     71.6
+## 3 26301   2018-02-28     14.9
+## 4 26301   2018-03-01      6.9
+## 5 26301   2018-03-03     14.9
+## 6 26301   2018-03-04     15.2
+## 7 26301   2018-03-05     22.3</code></pre>
+<pre class="r"><code>time_series_rolling_noncumul_rsplit$splits[[1]] %&gt;% assessment()</code></pre>
+<pre><code>## # A tibble: 1 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-03-06       19</code></pre>
+<p>Looking at the second slice confirms that the training/analysis set contains the same number of observations as the first slice, and both the training/analysis and testing/assessment sets have simply shifted forward one period in time.</p>
+<pre class="r"><code>time_series_rolling_noncumul_rsplit$splits[[2]] %&gt;% analysis()</code></pre>
+<pre><code>## # A tibble: 7 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-02-27     71.6
+## 2 26301   2018-02-28     14.9
+## 3 26301   2018-03-01      6.9
+## 4 26301   2018-03-03     14.9
+## 5 26301   2018-03-04     15.2
+## 6 26301   2018-03-05     22.3
+## 7 26301   2018-03-06     19</code></pre>
+<pre class="r"><code>time_series_rolling_noncumul_rsplit$splits[[2]] %&gt;% assessment()</code></pre>
+<pre><code>## # A tibble: 1 x 3
+##   bike_id date       duration
+##   &lt;fct&gt;   &lt;date&gt;        &lt;dbl&gt;
+## 1 26301   2018-03-08     33.4</code></pre>
+</div>
+</div>
+<div id="wrap-up" class="section level1">
+<h1>Wrap Up</h1>
+<p>The <code>rsample</code> package contains many useful functions for splitting and resampling data sets. In addition to the functions demonstrated here, other <code>rsample</code> functions include:</p>
+<ul>
+<li><code>group_vfold_cv()</code>: create cross-validation folds based on a grouping variable</li>
+<li><code>rsample2caret()</code>: convert an <code>rset</code> object from <code>rsample</code> into list than mimics part of the <code>trainControl</code> object from the <code>caret</code> package</li>
+<li><code>caret2rsample()</code>: convert the <code>index</code> and <code>indexOut</code> elements of <code>caret</code>’s <code>trainControl</code> object into an <code>rset</code> object from <code>rsample</code></li>
+</ul>
+<p>For more information, see the <a href="https://tidymodels.github.io/rsample/index.html"><code>rsample</code> website</a>.</p>
+</div>
+
+
+        
+          <div class="blog-tags">
+            
+              <a href="//tags/r/">R</a>&nbsp;
+            
+              <a href="//tags/modeling/">modeling</a>&nbsp;
+            
+              <a href="//tags/resampling/">resampling</a>&nbsp;
+            
+          </div>
+        
+
+        
+
+        
+      </article>
+
+      
+        <ul class="pager blog-pager">
+          
+          
+        </ul>
+      
+
+
+      
+
+    </div>
+  </div>
+</div>
+
+      
+<footer>
+  <div class="container">
+    <div class="row">
+      <div class="col-lg-8 col-lg-offset-2 col-md-10 col-md-offset-1">
+        <ul class="list-inline text-center footer-links">
+          
+          
+        </ul>
+        <p class="credits copyright text-muted">
+          
+            
+              Robert Lankford
+            
+          
+
+          &nbsp;&bull;&nbsp;&copy;
+          
+            2020
+          
+
+          
+            &nbsp;&bull;&nbsp;
+            <a href="/">Robert Lankford</a>
+          
+        </p>
+        
+        <p class="credits theme-by text-muted">
+          <a href="https://gohugo.io">Hugo v0.74.3</a> powered &nbsp;&bull;&nbsp; Theme <a href="https://github.com/halogenica/beautifulhugo">Beautiful Hugo</a> adapted from <a href="https://deanattali.com/beautiful-jekyll/">Beautiful Jekyll</a>
+          
+        </p>
+      </div>
+    </div>
+  </div>
+</footer><script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.js" integrity="sha384-K3vbOmF2BtaVai+Qk37uypf7VrgBubhQreNQe9aGsz9lB63dIFiQVlJbr92dw2Lx" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/contrib/auto-render.min.js" integrity="sha384-kmZOZB5ObwgQnS/DuDg6TScgOiWWBiVt0plIRkZCmE6rDZGrEOQeHM5PcHi+nyqe" crossorigin="anonymous"></script>
+<script src="https://code.jquery.com/jquery-1.12.4.min.js" integrity="sha256-ZosEbRLbNQzLpnKIkEdrPv7lOy9C27hHQ+Xp8a4MxAQ=" crossorigin="anonymous"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+
+<script src="/js/main.js"></script><script> renderMathInElement(document.body); </script><script src="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/4.1.2/photoswipe.min.js" integrity="sha384-QELNnmcmU8IR9ZAykt67vGr9/rZJdHbiWi64V88fCPaOohUlHCqUD/unNN0BXSqy" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/photoswipe/4.1.2/photoswipe-ui-default.min.js" integrity="sha384-m67o7SkQ1ALzKZIFh4CiTA8tmadaujiTa9Vu+nqPSwDOqHrDmxLezTdFln8077+q" crossorigin="anonymous"></script><script src="/js/load-photoswipe.js"></script>
+
+
+
+
+
+
+
+
+
+    
+  </body>
+</html>
+

@@ -1,0 +1,1655 @@
+---
+title: "rstudio::conf 2020 Tidy Forecasting #2"
+author: Robert Lankford
+date: '2020-02-10'
+slug: rstudio-conf-2020-tidy-forecasting-2
+editor_options: 
+  chunk_output_type: console
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+<link href="/rmarkdown-libs/lightable/lightable.css" rel="stylesheet" />
+
+
+<p>This post is the second in a series documenting my experience in the <a href="https://education.rstudio.com/blog/2020/02/conf20-ts/">Tidy Time Series and Forecasting in R workshop</a> at <a href="https://rstudio.com/resources/rstudioconf-2020/">rstudio::conf 2020</a> in San Francisco, CA.</p>
+<!--more-->
+<p>In the previous post, I talked about the first day of the Tidy Forecasting in R workshop. The first day was focused on “everything that <em>is not</em> forecasting”, such as:</p>
+<ol style="list-style-type: decimal">
+<li>What a <code>tsibble</code> is</li>
+<li>Time-series plots</li>
+<li>Time-series transformations</li>
+</ol>
+<p>On the second day, we learned about “everything that <em>is</em> forecasting”. This post will focus on those topics, which include:</p>
+<ol style="list-style-type: decimal">
+<li>Building time-series models</li>
+<li>Validating time-series models</li>
+<li>Producing forecasts</li>
+<li>Determining forecast accuracy</li>
+</ol>
+<div id="setup" class="section level1">
+<h1>Setup</h1>
+<p>The following packages will be needed.</p>
+<pre class="r"><code># Tidyverse
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+library(stringr)
+
+# Tidyverts
+library(tsibble)
+library(feasts)
+library(fable)
+
+# Other
+library(ggplot2)</code></pre>
+<p>The following data sets are used in this post.</p>
+<ol style="list-style-type: decimal">
+<li>Monthly retail turnover for department stores in Victoria, Australia</li>
+</ol>
+<pre class="r"><code>tsibbledata::aus_retail %&gt;% 
+  filter(
+    Industry    == &quot;Department stores&quot;,
+    State       == &quot;Victoria&quot;,
+    year(Month) &gt;= 2000
+  ) %&gt;% 
+  select(Month, Turnover) -&gt; victoria_dept_stores_tsbl</code></pre>
+<ol start="2" style="list-style-type: decimal">
+<li>Yearly economic indicator values for Australia</li>
+</ol>
+<pre class="r"><code>tsibbledata::global_economy %&gt;% 
+  filter(Country == &quot;Australia&quot;) %&gt;% 
+  select(Year, Growth, CPI, Imports, Exports) %&gt;% 
+  drop_na() %&gt;% 
+  as_tsibble(index = Year) -&gt; aus_economy_tsbl</code></pre>
+</div>
+<div id="time-series-decomposition" class="section level1">
+<h1>Time-Series Decomposition</h1>
+<p>Many time-series can be broken into three components:</p>
+<ol style="list-style-type: decimal">
+<li>Seasonality: the periodic repeated fluctuations that occur at a known, fixed period (e.g. monthly patterns)</li>
+<li>Trend-Cycle: the progression of the series over the long-term (trend) and the non-periodic repeated fluctuations (cycle)</li>
+<li>Remainder: the random, irregular “noise” that is leftover after removing the previous two components</li>
+</ol>
+<p>The <code>feasts</code> package provides the <code>STL()</code> function to easily decomposes a time-series. STL stands for <strong>S</strong>easonal and <strong>T</strong>rend Decomposition using <strong>L</strong>oess.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  model(STL = STL(Turnover)) -&gt; victora_dept_stores_stl_mbl</code></pre>
+<pre><code>## # A mable: 1 x 1
+##       STL
+##   &lt;model&gt;
+## 1   &lt;STL&gt;</code></pre>
+<p>After fitting an STL model, passing the resulting <code>mable</code> (model-table) into the <code>components()</code> function will return a <code>dable</code> (decomposition-table). The <code>dable</code> contains all of the decomposition components.</p>
+<pre class="r"><code>victoria_dept_stores_stl_dbl &lt;- components(victora_dept_stores_stl_mbl)</code></pre>
+<pre><code>## # A dable:           228 x 7 [1M]
+## # Key:               .model [1]
+## # STL Decomposition: Turnover = trend + season_year + remainder
+##    .model    Month Turnover trend season_year remainder season_adjust
+##    &lt;chr&gt;     &lt;mth&gt;    &lt;dbl&gt; &lt;dbl&gt;       &lt;dbl&gt;     &lt;dbl&gt;         &lt;dbl&gt;
+##  1 STL    2000 Jan     228   271.      -42.7     -0.352          271.
+##  2 STL    2000 Feb     196.  272.      -85.6      9.42           281.
+##  3 STL    2000 Mar     224.  273.      -33.5    -15.3            258.
+##  4 STL    2000 Apr     261.  274.      -19.4      6.00           280.
+##  5 STL    2000 May     265.  275.      -15.1      5.32           280.
+##  6 STL    2000 Jun     299.  276.        1.77    20.7            297.
+##  7 STL    2000 Jul     206.  277.      -24.6    -46.5            231.
+##  8 STL    2000 Aug     240.  278.      -51.4     13.4            292.
+##  9 STL    2000 Sep     251.  279.      -40.4     12.2            291.
+## 10 STL    2000 Oct     270.  280.      -14.0      3.81           284.
+## # ... with 218 more rows</code></pre>
+<p>The <code>dable</code> can then be passed into the <code>autoplot()</code> function to plot the original series and the decomposed components.</p>
+<pre class="r"><code>victoria_dept_stores_stl_dbl %&gt;% 
+  autoplot() +
+  theme_bw()</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-9-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>Note that the trend and seasonality of a decomposition do not necessarily have to be fixed. They are allowed to change over time. The helper functions <code>trend()</code> and <code>season()</code> can be added to the <code>STL()</code> function to specify the <code>window</code>. The <code>window</code> is the number of consecutive observations (time-periods) used when estimating the seasonal or the trend-cycle component. The shorter the window, the quicker the trend or seasonality is allowed to change. At the extreme, setting the seasonality window to infinity is essentially assuming that the seasonality is identical across each time-period.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  model(STL = STL(Turnover ~ trend(window = 24) + season(window = 48))) %&gt;% 
+  components() %&gt;% 
+  autoplot() +
+  theme_bw()</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-10-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="basic-baseline-methods" class="section level1">
+<h1>Basic &amp; Baseline Methods</h1>
+<p>The <code>fable</code> package contains several “basic” methods of forecasting. These methods, at times, can prove quite useful, and can even produce good forecasts; however, they will most often be used as baselines to compare the performance of other, often more complicated, forecasting methods. These methods include:</p>
+<ul>
+<li><code>MEAN()</code> (mean): the mean of the entire series is projected forward as the forecast</li>
+<li><code>NAIVE()</code> (naive): the last value of the series is projected forward as the forecast</li>
+<li><code>SNAIVE()</code> (seasonal naive): the last value of each season of the series (e.g. the quarter or month last year) is projected forward as the forecast</li>
+<li><code>RW()</code> (random walk): the last value of the series, plus the average change across the whole series, is projected forward as the forecast</li>
+</ul>
+<p>All of these methods can be fit to the data at the same time within the <code>model()</code> function. Notice that the random walk model requires the use of the <code>drift()</code> helper function. Without drift, a random walk is just the naive model.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  model(
+    mean     = MEAN(Turnover),
+    naive    = NAIVE(Turnover),
+    snaive   = SNAIVE(Turnover),
+    rw_drift = RW(Turnover ~ drift())
+  ) -&gt; victoria_dept_stores_baseline_mbl</code></pre>
+<pre><code>## # A mable: 1 x 4
+##      mean   naive   snaive      rw_drift
+##   &lt;model&gt; &lt;model&gt;  &lt;model&gt;       &lt;model&gt;
+## 1  &lt;MEAN&gt; &lt;NAIVE&gt; &lt;SNAIVE&gt; &lt;RW w/ drift&gt;</code></pre>
+<p>Once we have these models, we can forecast across an arbitrary time horizon with the <code>forecast()</code> function.
+This function returns the titular <code>fable</code> (forecast-table). The <code>fable</code> contains the model type, the time index, the point forecast, and the parameters of the distribution of the forecast as a <code>&lt;dist&gt;</code> list-column.</p>
+<pre class="r"><code>victoria_dept_stores_baseline_mbl %&gt;% 
+  forecast(h = &quot;2 years&quot;) -&gt; victoria_dept_stores_baseline_fbl</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:left;">
+Month
+</th>
+<th style="text-align:left;">
+Turnover
+</th>
+<th style="text-align:right;">
+.mean
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+mean
+</td>
+<td style="text-align:left;">
+2019 Jan
+</td>
+<td style="text-align:left;">
+N(348, 10513)
+</td>
+<td style="text-align:right;">
+348.0303
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+mean
+</td>
+<td style="text-align:left;">
+2019 Feb
+</td>
+<td style="text-align:left;">
+N(348, 10513)
+</td>
+<td style="text-align:right;">
+348.0303
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+mean
+</td>
+<td style="text-align:left;">
+2019 Mar
+</td>
+<td style="text-align:left;">
+N(348, 10513)
+</td>
+<td style="text-align:right;">
+348.0303
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+naive
+</td>
+<td style="text-align:left;">
+2019 Jan
+</td>
+<td style="text-align:left;">
+N(724, 16030)
+</td>
+<td style="text-align:right;">
+723.7000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+naive
+</td>
+<td style="text-align:left;">
+2019 Feb
+</td>
+<td style="text-align:left;">
+N(724, 32059)
+</td>
+<td style="text-align:right;">
+723.7000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+naive
+</td>
+<td style="text-align:left;">
+2019 Mar
+</td>
+<td style="text-align:left;">
+N(724, 48089)
+</td>
+<td style="text-align:right;">
+723.7000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+snaive
+</td>
+<td style="text-align:left;">
+2019 Jan
+</td>
+<td style="text-align:left;">
+N(354, 335)
+</td>
+<td style="text-align:right;">
+354.3000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+snaive
+</td>
+<td style="text-align:left;">
+2019 Feb
+</td>
+<td style="text-align:left;">
+N(278, 335)
+</td>
+<td style="text-align:right;">
+277.8000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+snaive
+</td>
+<td style="text-align:left;">
+2019 Mar
+</td>
+<td style="text-align:left;">
+N(365, 335)
+</td>
+<td style="text-align:right;">
+364.9000
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+rw_drift
+</td>
+<td style="text-align:left;">
+2019 Jan
+</td>
+<td style="text-align:left;">
+N(726, 16096)
+</td>
+<td style="text-align:right;">
+725.8837
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+rw_drift
+</td>
+<td style="text-align:left;">
+2019 Feb
+</td>
+<td style="text-align:left;">
+N(728, 32333)
+</td>
+<td style="text-align:right;">
+728.0674
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+rw_drift
+</td>
+<td style="text-align:left;">
+2019 Mar
+</td>
+<td style="text-align:left;">
+N(730, 48713)
+</td>
+<td style="text-align:right;">
+730.2511
+</td>
+</tr>
+</tbody>
+</table>
+<p>A <code>fable</code> can be passed directly into the <code>autoplot()</code> function to plot the forecasts. Note that we get confidence intervals for the forecasts. The point forecast is the mean of the interval.</p>
+<pre class="r"><code>victoria_dept_stores_baseline_fbl %&gt;% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1, scales = &quot;free_y&quot;) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = &quot;B&quot;
+    )
+  ) +
+  labs(
+    title    = &quot;Two-Year Forecast of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Models: Mean, Naive, Seasonal Naive, and Random Walk with Drift&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-15-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>The plotted confidence intervals can be turned off by setting <code>level = NULL</code> in the <code>autoplot()</code> function.</p>
+<pre class="r"><code>victoria_dept_stores_baseline_fbl %&gt;% 
+  autoplot(victoria_dept_stores_tsbl, level = NULL) +
+  facet_wrap(~ .model, ncol = 1) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = &quot;B&quot;
+    )
+  ) +
+  labs(
+    title    = &quot;Two-Year Forecast of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Models: Mean, Naive, Seasonal Naive, and Random Walk with Drift&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-16-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="more-complex-methods" class="section level1">
+<h1>More Complex Methods</h1>
+<p>We can now start looking at more complicated algorithms. These models take a bit more computational time and power to fit, and are more difficult to interpret and interpret; however, they can often outperform the baseline models. The models introduced in the workshop were:</p>
+<ul>
+<li>Exponential Smoothing (ETS)</li>
+<li>Autoregressive Integrated Moving Average (ARIMA)</li>
+<li>Dynamic Regression/Regression with ARIMA Errors (RegARIMA)</li>
+</ul>
+<div id="exponential-smoothing" class="section level2">
+<h2>Exponential Smoothing</h2>
+<p><strong>E</strong>xponen<strong>T</strong>ial <strong>S</strong>moothing models, also called <strong>E</strong>rror, <strong>T</strong>rend, and <strong>S</strong>easonality models and abbreviated ETS, attempt to forecast a time-series based on its “Level”, “Trend”, and “Seasonal” components. Smoothing parameters are used to control the rates of change of those components. ETS models are similar to models where the forecast is based off of weighted past observations; however, for ETS, the most recent observations have higher weights than the earliest observations. These components can be:</p>
+<ul>
+<li>Additive: the error, trend, and seasonality are added together to get the resulting time-series</li>
+<li>Multiplicative: the error, trend, and seasonality are multiplied together to get the resulting time-series</li>
+<li>Damped: specifically for the trend component, instead of increasing indefinitely, the long-term forecasts will eventually “flatten out”</li>
+</ul>
+<p>There are 15 combinations of Exponential Smoothing models available in the <code>fable</code> package using the <code>ETS()</code> function. Within the <code>ETS()</code> function, you can specify the <code>error()</code>, <code>trend()</code>, and <code>season()</code>. If you do not specify these options, the <code>ETS()</code> function will automatically pick the optimal values based on minimizing the <a href="https://en.wikipedia.org/wiki/Akaike_information_criterion#AICc">AICc</a>. The options are:</p>
+<ul>
+<li>Additive: <code>method = "A"</code></li>
+<li>Multiplicative: <code>method = "M"</code></li>
+<li>Additive Damped: <code>method = "Ad"</code></li>
+<li>Multiplicative Damped: <code>method = "Md"</code></li>
+</ul>
+<p>The typical way of expressing an Exponential Smoothing model is ETS(Error, Trend, Seasonal), so an ETS(M,N,A) has multiplicative errors, no trend, and additive seasonality. Note below that we do not have any models with both additive errors and multiplicative seasonality. Dr. Hyndman recommended against using this combination, as they almost never have good results.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  model(
+    ANN  = ETS(Turnover ~ error(&quot;A&quot;) + trend(&quot;N&quot;) + season(&quot;N&quot;)),
+    AAN  = ETS(Turnover ~ error(&quot;A&quot;) + trend(&quot;A&quot;) + season(&quot;N&quot;)),
+    AAdN = ETS(Turnover ~ error(&quot;A&quot;) + trend(&quot;Ad&quot;) + season(&quot;N&quot;)),
+    ANA  = ETS(Turnover ~ error(&quot;A&quot;) + trend(&quot;N&quot;) + season(&quot;A&quot;)),
+    AAA  = ETS(Turnover ~ error(&quot;A&quot;) + trend(&quot;A&quot;) + season(&quot;A&quot;)),
+    AAdA = ETS(Turnover ~ error(&quot;A&quot;) + trend(&quot;Ad&quot;) + season(&quot;A&quot;)),
+    
+    MNN  = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;N&quot;) + season(&quot;N&quot;)),
+    MAN  = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;A&quot;) + season(&quot;N&quot;)),
+    MAdN = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;Ad&quot;) + season(&quot;N&quot;)),
+    MNA  = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;N&quot;) + season(&quot;A&quot;)),
+    MAA  = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;A&quot;) + season(&quot;A&quot;)),
+    MAdA = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;Ad&quot;) + season(&quot;A&quot;)),
+    MNM  = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;N&quot;) + season(&quot;M&quot;)),
+    MAM  = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;A&quot;) + season(&quot;M&quot;)),
+    MAdM = ETS(Turnover ~ error(&quot;M&quot;) + trend(&quot;Ad&quot;) + season(&quot;M&quot;)),
+  ) -&gt; victoria_dept_stores_ets_mbl</code></pre>
+<pre><code>## Rows: 1
+## Columns: 15
+## $ ANN  &lt;model&gt; [ETS(A,N,N)]
+## $ AAN  &lt;model&gt; [ETS(A,A,N)]
+## $ AAdN &lt;model&gt; [ETS(A,Ad,N)]
+## $ ANA  &lt;model&gt; [ETS(A,N,A)]
+## $ AAA  &lt;model&gt; [ETS(A,A,A)]
+## $ AAdA &lt;model&gt; [ETS(A,Ad,A)]
+## $ MNN  &lt;model&gt; [ETS(M,N,N)]
+## $ MAN  &lt;model&gt; [ETS(M,A,N)]
+## $ MAdN &lt;model&gt; [ETS(M,Ad,N)]
+## $ MNA  &lt;model&gt; [ETS(M,N,A)]
+## $ MAA  &lt;model&gt; [ETS(M,A,A)]
+## $ MAdA &lt;model&gt; [ETS(M,Ad,A)]
+## $ MNM  &lt;model&gt; [ETS(M,N,M)]
+## $ MAM  &lt;model&gt; [ETS(M,A,M)]
+## $ MAdM &lt;model&gt; [ETS(M,Ad,M)]</code></pre>
+<p>We can see what the smoothing parameters are by selecting a specific model and using the <code>report()</code> function.</p>
+<pre class="r"><code>victoria_dept_stores_ets_mbl %&gt;% 
+  select(MAdA) %&gt;% 
+  report()
+## Series: Turnover 
+## Model: ETS(M,Ad,A) 
+##   Smoothing parameters:
+##     alpha = 0.1257331 
+##     beta  = 0.000100141 
+##     gamma = 0.1437031 
+##     phi   = 0.9799871 
+## 
+##   Initial states:
+##         l        b       s1     s2        s3        s4        s5        s6
+##  272.4276 2.041316 297.5088 35.676 -15.14924 -44.51365 -55.06139 -17.59358
+##         s7        s8       s9       s10       s11       s12
+##  -3.003334 -18.80118 -17.5564 -31.61395 -90.18424 -39.70783
+## 
+##   sigma^2:  0.0018
+## 
+##      AIC     AICc      BIC 
+## 2471.476 2474.749 2533.204</code></pre>
+<p>You can also use the <code>tidy()</code> function.</p>
+<pre class="r"><code>victoria_dept_stores_ets_mbl %&gt;% 
+  select(MAdA) %&gt;% 
+  tidy()</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:left;">
+term
+</th>
+<th style="text-align:right;">
+estimate
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+alpha
+</td>
+<td style="text-align:right;">
+0.13
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+beta
+</td>
+<td style="text-align:right;">
+0.00
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+gamma
+</td>
+<td style="text-align:right;">
+0.14
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+phi
+</td>
+<td style="text-align:right;">
+0.98
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+l
+</td>
+<td style="text-align:right;">
+272.43
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+b
+</td>
+<td style="text-align:right;">
+2.04
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s0
+</td>
+<td style="text-align:right;">
+297.51
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s1
+</td>
+<td style="text-align:right;">
+35.68
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s2
+</td>
+<td style="text-align:right;">
+-15.15
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s3
+</td>
+<td style="text-align:right;">
+-44.51
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s4
+</td>
+<td style="text-align:right;">
+-55.06
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s5
+</td>
+<td style="text-align:right;">
+-17.59
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s6
+</td>
+<td style="text-align:right;">
+-3.00
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s7
+</td>
+<td style="text-align:right;">
+-18.80
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s8
+</td>
+<td style="text-align:right;">
+-17.56
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s9
+</td>
+<td style="text-align:right;">
+-31.61
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+MAdA
+</td>
+<td style="text-align:left;">
+s10
+</td>
+<td style="text-align:right;">
+-90.18
+</td>
+</tr>
+</tbody>
+</table>
+<p>Selecting just a few of these models, we can see how the forecasts over the next few years play out.</p>
+<pre class="r"><code>victoria_dept_stores_ets_mbl %&gt;% 
+  select(ANA, AAdA, MAdA, MAM) %&gt;% 
+  forecast(h = &quot;2 years&quot;) %&gt;% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = &quot;B&quot;
+    )
+  ) +
+  labs(
+    title    = &quot;Two-Year Forecast of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Models: ETS(A,N,A), ETS(A,Ad,A), ETS(M,Ad,A), ETS(M,A,M)&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-22-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="arima" class="section level2">
+<h2>ARIMA</h2>
+<p>ARIMA models are composed of three terms:</p>
+<ul>
+<li>Autoregressive (AR): lagged observations of the series</li>
+<li>Integrated (I): differencing of the series to make it stationary</li>
+<li>Moving Average (MA): lagged errors</li>
+</ul>
+<p>Stationarity is a key assumption of this model, and the reason for the “I” term. Essentially, stationarity is when all the observations in the series that come after any observation ‘t’ do not depend on what the value of ‘t’ was. In other words, patterns are not really predictable in the long-run (the past cannot necessarily predict the future) and the time-series is roughly horizontal with constant variance. If this assumption is not met, the data can be differenced (the observation at t+1 minus the observation at time t) and the result of the differencing will often be stationary. The maximum number of times data should be differenced is twice, according to Dr. Hyndman.</p>
+<p>The <code>feasts</code> package provides the <code>unitroot_kpss()</code> function to test the stationarity assumption. The <a href="https://en.wikipedia.org/wiki/KPSS_test">KPSS Test</a> tests for a unit root, where the null hypothesis is essentially that the series is stationary. If the test returns a p-value less than 0.05, we should difference the data and test again.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  features(Turnover, unitroot_kpss)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:right;">
+kpss_stat
+</th>
+<th style="text-align:right;">
+kpss_pvalue
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right;">
+1.98
+</td>
+<td style="text-align:right;">
+0.01
+</td>
+</tr>
+</tbody>
+</table>
+<p>Should we receive a result with a p-value of less than 0.05 (as above), we can use the <code>difference()</code> function within <code>features()</code> to difference the series and then apply the KPSS test again.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  features(difference(Turnover), unitroot_kpss)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:right;">
+kpss_stat
+</th>
+<th style="text-align:right;">
+kpss_pvalue
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right;">
+0.04
+</td>
+<td style="text-align:right;">
+0.1
+</td>
+</tr>
+</tbody>
+</table>
+<p>Once we have determined if differencing is required, we can move to fitting ARIMA models. We can pick the AR, differencing, and MA terms using the <code>pdq()</code> function within the <code>ARIMA()</code> function.. In ARIMA terminology:</p>
+<ul>
+<li>Parameter ‘p’ is the number of AR terms (lags of the response variable)</li>
+<li>Parameter ‘d’ is the number of times to difference the series</li>
+<li>Parameter ‘q’ is the number of MA terms (lags of the error terms)</li>
+</ul>
+<p>Note that these lags are linear in time, meaning they are the period(s) directly before the base period, and they do not account for seasonality. For example, if we have monthly data, a lag of one will take the month before, a lag of two will take two months before, and so on. If we want to consider seasonality we need to use seasonal lags. For monthly data, we would take the 12th lag for the month in the previous year. Again, <code>fable</code> allows us to select the seasonal terms using the <code>PDQ()</code> function within the <code>ARIMA()</code> function. In ARIMA terminology:</p>
+<ul>
+<li>Parameter ‘P’ is the number of seasonal AR terms</li>
+<li>Parameter ‘D’ is the number of times to difference the seasons of the series (for example, take the difference between this month and the same month last year)</li>
+<li>Parameter ‘Q’ is the number of seasonal MA terms</li>
+</ul>
+<p>If you do not want to select the p, d, q, P, D, and Q parameters yourself, you can just pass the response variable into the <code>ARIMA()</code> function and the underlying algorithm will select the values that minimize the AICc.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  model(
+    arima_211_000 = ARIMA(Turnover ~ pdq(2,1,1) + PDQ(0,0,0)),
+    arima_012_002 = ARIMA(Turnover ~ pdq(0,1,2) + PDQ(0,0,2)),
+    arima_200_010 = ARIMA(Turnover ~ pdq(2,0,0) + PDQ(0,1,0)),
+    arima_auto    = ARIMA(Turnover)
+  ) -&gt; victoria_dept_stores_arima_mbl</code></pre>
+<pre><code>## Rows: 1
+## Columns: 4
+## $ arima_211_000 &lt;model&gt; [ARIMA(2,1,1)]
+## $ arima_012_002 &lt;model&gt; [ARIMA(0,1,2)(0,0,2)[12]]
+## $ arima_200_010 &lt;model&gt; [ARIMA(2,0,0)(0,1,0)[12] w/ drift]
+## $ arima_auto    &lt;model&gt; [ARIMA(2,1,1)(1,1,2)[12]]</code></pre>
+<p>Like before, we can use the <code>report()</code> function to check out a particular model.</p>
+<pre class="r"><code>victoria_dept_stores_arima_mbl %&gt;% 
+  select(arima_auto) %&gt;% 
+  report()
+## Series: Turnover 
+## Model: ARIMA(2,1,1)(1,1,2)[12] 
+## 
+## Coefficients:
+##           ar1      ar2      ma1     sar1    sma1     sma2
+##       -0.2336  -0.1432  -0.7237  -0.8059  0.1900  -0.5586
+## s.e.   0.0939   0.0852   0.0712   0.2862  0.2785   0.1707
+## 
+## sigma^2 estimated as 193.8:  log likelihood=-872.18
+## AIC=1758.35   AICc=1758.89   BIC=1781.94</code></pre>
+<p>Also like before, the <code>tidy()</code> function can be used.</p>
+<pre class="r"><code>victoria_dept_stores_arima_mbl %&gt;% 
+  select(arima_auto) %&gt;% 
+  tidy()</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:left;">
+term
+</th>
+<th style="text-align:right;">
+estimate
+</th>
+<th style="text-align:right;">
+std.error
+</th>
+<th style="text-align:right;">
+statistic
+</th>
+<th style="text-align:right;">
+p.value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+arima_auto
+</td>
+<td style="text-align:left;">
+ar1
+</td>
+<td style="text-align:right;">
+-0.23
+</td>
+<td style="text-align:right;">
+0.09
+</td>
+<td style="text-align:right;">
+-2.49
+</td>
+<td style="text-align:right;">
+0.01
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_auto
+</td>
+<td style="text-align:left;">
+ar2
+</td>
+<td style="text-align:right;">
+-0.14
+</td>
+<td style="text-align:right;">
+0.09
+</td>
+<td style="text-align:right;">
+-1.68
+</td>
+<td style="text-align:right;">
+0.09
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_auto
+</td>
+<td style="text-align:left;">
+ma1
+</td>
+<td style="text-align:right;">
+-0.72
+</td>
+<td style="text-align:right;">
+0.07
+</td>
+<td style="text-align:right;">
+-10.16
+</td>
+<td style="text-align:right;">
+0.00
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_auto
+</td>
+<td style="text-align:left;">
+sar1
+</td>
+<td style="text-align:right;">
+-0.81
+</td>
+<td style="text-align:right;">
+0.29
+</td>
+<td style="text-align:right;">
+-2.82
+</td>
+<td style="text-align:right;">
+0.01
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_auto
+</td>
+<td style="text-align:left;">
+sma1
+</td>
+<td style="text-align:right;">
+0.19
+</td>
+<td style="text-align:right;">
+0.28
+</td>
+<td style="text-align:right;">
+0.68
+</td>
+<td style="text-align:right;">
+0.50
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_auto
+</td>
+<td style="text-align:left;">
+sma2
+</td>
+<td style="text-align:right;">
+-0.56
+</td>
+<td style="text-align:right;">
+0.17
+</td>
+<td style="text-align:right;">
+-3.27
+</td>
+<td style="text-align:right;">
+0.00
+</td>
+</tr>
+</tbody>
+</table>
+<p>Once we have a model we like, we can forecast ahead and plot the results.</p>
+<pre class="r"><code>victoria_dept_stores_arima_mbl %&gt;% 
+  forecast(h = &quot;2 years&quot;) %&gt;% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = &quot;B&quot;
+    )
+  ) +
+  labs(
+    title    = &quot;Two-Year Forecast of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = str_glue(&quot;Models: ARIMA(2,1,1), ARIMA(0,1,2)(0,0,2)[12],  
+                        ARIMA(2,0,0)(0,1,0), ARIMA(2,1,1)(1,1,2)[12]&quot;),
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-32-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="dynamic-regression-regarima" class="section level2">
+<h2>Dynamic Regression (RegARIMA)</h2>
+<p>The last algorithm introduced at the workshop was Dynamic Regression, or a linear regression with ARIMA errors. In regular linear regression, we <a href="http://people.duke.edu/~rnau/testing.htm#assumptions">do not want the residuals to be correlated</a>. In Dynamic Regression, we allow the residuals to be correlated, and then fit those residuals to an ARIMA process. This is an extension of the <code>ARIMA()</code> function where we add explanatory variables.</p>
+<p>For these examples, I will switch the <a href="https://tsibbledata.tidyverts.org/reference/global_economy.html">Australian economy data set</a>. This data set has the annual percentage growth in GDP for Australia (we will be trying to predict this), and some other information, such as CPI, and Imports and Exports as a percentage of GDP.</p>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:right;">
+Year
+</th>
+<th style="text-align:right;">
+Growth
+</th>
+<th style="text-align:right;">
+CPI
+</th>
+<th style="text-align:right;">
+Imports
+</th>
+<th style="text-align:right;">
+Exports
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:right;">
+1961
+</td>
+<td style="text-align:right;">
+2.49
+</td>
+<td style="text-align:right;">
+8.14
+</td>
+<td style="text-align:right;">
+15.03
+</td>
+<td style="text-align:right;">
+12.40
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+1962
+</td>
+<td style="text-align:right;">
+1.30
+</td>
+<td style="text-align:right;">
+8.12
+</td>
+<td style="text-align:right;">
+12.63
+</td>
+<td style="text-align:right;">
+13.94
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+1963
+</td>
+<td style="text-align:right;">
+6.21
+</td>
+<td style="text-align:right;">
+8.17
+</td>
+<td style="text-align:right;">
+13.83
+</td>
+<td style="text-align:right;">
+13.01
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+1964
+</td>
+<td style="text-align:right;">
+6.98
+</td>
+<td style="text-align:right;">
+8.40
+</td>
+<td style="text-align:right;">
+13.76
+</td>
+<td style="text-align:right;">
+14.94
+</td>
+</tr>
+<tr>
+<td style="text-align:right;">
+1965
+</td>
+<td style="text-align:right;">
+5.98
+</td>
+<td style="text-align:right;">
+8.69
+</td>
+<td style="text-align:right;">
+15.27
+</td>
+<td style="text-align:right;">
+13.22
+</td>
+</tr>
+</tbody>
+</table>
+<p>The percentage growth in GDP for Australia from 1961 to 2017 looks like this:</p>
+<pre class="r"><code>aus_economy_tsbl %&gt;% 
+  autoplot(Growth) +
+  geom_hline(aes(yintercept = 0), linetype = &quot;dashed&quot;) +
+  theme_minimal() +
+  scale_y_continuous(
+    labels = scales::percent_format(scale = 1, accuracy = 0.1)
+  ) +
+  expand_limits(y = c(-8, 8)) +
+  labs(
+    title    = &quot;Annual Percentage Growth in GDP For Australia&quot;,
+    subtitle = &quot;Sourced from tsibbledata package&quot;,
+    caption  = &quot;Original Source: The World Bank&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Growth in GDP&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-34-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>As with basic ARIMA models, you can either specify the p, d, and q parameters or allow the function to select them for you.</p>
+<pre class="r"><code>aus_economy_tsbl %&gt;% 
+  filter(Year &lt;= 2010) %&gt;% 
+  model(
+    regarima_110  = ARIMA(Growth ~ CPI + Imports + Exports + pdq(1,1,0)),
+    regarima_010  = ARIMA(Growth ~ CPI + Imports + Exports + pdq(0,1,0)),
+    regarima_002  = ARIMA(Growth ~ CPI + Imports + Exports + pdq(0,0,2)),
+    regarima_auto = ARIMA(Growth ~ CPI + Imports + Exports)
+  ) -&gt; aus_economy_dyn_reg_mbl</code></pre>
+<pre><code>## Rows: 1
+## Columns: 4
+## $ regarima_110  &lt;model&gt; [LM w/ ARIMA(1,1,0) errors]
+## $ regarima_010  &lt;model&gt; [LM w/ ARIMA(0,1,0) errors]
+## $ regarima_002  &lt;model&gt; [LM w/ ARIMA(0,0,2) errors]
+## $ regarima_auto &lt;model&gt; [LM w/ ARIMA(0,0,0) errors]</code></pre>
+<p>Note that I have held out 2011 to 2017. The held out years will be used to forecast because we need the extraneous variables to have future values (since they are variables in the model and <em>not</em> what is being forecasted). We can see this by using the <code>report()</code> function.</p>
+<pre class="r"><code>aus_economy_dyn_reg_mbl %&gt;% 
+  select(regarima_auto) %&gt;% 
+  report()
+## Series: Growth 
+## Model: LM w/ ARIMA(0,0,0) errors 
+## 
+## Coefficients:
+##           CPI  Imports  Exports
+##       -0.0465   0.3810  -0.0500
+## s.e.   0.0109   0.1914   0.1998
+## 
+## sigma^2 estimated as 3.11:  log likelihood=-97.76
+## AIC=203.53   AICc=204.42   BIC=211.18</code></pre>
+<p>The <code>tidy()</code> function again works here.</p>
+<pre class="r"><code>aus_economy_dyn_reg_mbl %&gt;% 
+  select(regarima_auto) %&gt;% 
+  tidy()</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:left;">
+term
+</th>
+<th style="text-align:right;">
+estimate
+</th>
+<th style="text-align:right;">
+std.error
+</th>
+<th style="text-align:right;">
+statistic
+</th>
+<th style="text-align:right;">
+p.value
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+regarima_auto
+</td>
+<td style="text-align:left;">
+CPI
+</td>
+<td style="text-align:right;">
+-0.05
+</td>
+<td style="text-align:right;">
+0.01
+</td>
+<td style="text-align:right;">
+-4.28
+</td>
+<td style="text-align:right;">
+0.00
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+regarima_auto
+</td>
+<td style="text-align:left;">
+Imports
+</td>
+<td style="text-align:right;">
+0.38
+</td>
+<td style="text-align:right;">
+0.19
+</td>
+<td style="text-align:right;">
+1.99
+</td>
+<td style="text-align:right;">
+0.05
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+regarima_auto
+</td>
+<td style="text-align:left;">
+Exports
+</td>
+<td style="text-align:right;">
+-0.05
+</td>
+<td style="text-align:right;">
+0.20
+</td>
+<td style="text-align:right;">
+-0.25
+</td>
+<td style="text-align:right;">
+0.80
+</td>
+</tr>
+</tbody>
+</table>
+<p>We can now use the held data to forecast the <code>Growth</code> variable from 2011 to 2017. Note that including the full data set in the <code>autoplot()</code> function will plot the actual <code>Growth</code> over the forecast horizon. This is useful to visually see how well the forecast performed before we get to the formal performance metrics.</p>
+<pre class="r"><code>aus_economy_tsbl %&gt;% 
+  filter(Year &gt; 2010) %&gt;% 
+  forecast(object = aus_economy_dyn_reg_mbl) %&gt;% 
+  autoplot(aus_economy_tsbl) +
+  geom_hline(aes(yintercept = 0), linetype = &quot;dashed&quot;) +
+  facet_wrap(~ .model, ncol = 1, scales = &quot;free_y&quot;) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::percent_format(scale = 1, accuracy = 0.1)
+  ) +
+  labs(
+    title    = str_glue(&quot;Seven-Year Forecast of Annual Percentage Growth 
+                        in GDP For Australia&quot;),
+    subtitle = str_glue(&quot;Models: four combinations of Growth = CPI + Imports + Exports
+                        with ARIMA(1,1,0), ARIMA(0,1,0), ARIMA(0,0,2) and 
+                        ARIMA(0,0,0) errors&quot;),
+    x        = &quot;&quot;,
+    y        = &quot;Growth in GDP&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-40-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="ensemble-method" class="section level2">
+<h2>Ensemble Method</h2>
+<p>Having been introduced to seven time-series model types (four baseline and three more complex), the process of ensembling was then introduced. We can train multiple models, and then take some weighted average of their outputs as the forecast. The <code>fable</code> package is smart enough to combine forecasts using only basic arithmetic, and the <code>forecast()</code> function is smart enough to interpret the ensemble. The ensemble model will forecast for all the models, combine them, and adjust the final forecast appropriately.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  model(
+    snaive = SNAIVE(Turnover),
+    ets    = ETS(Turnover),
+    arima  = ARIMA(Turnover)
+  ) %&gt;% 
+  mutate(mixed = (snaive + ets + arima) / 3) -&gt; victoria_dept_stores_ensemble_mbl</code></pre>
+<pre><code>## # A mable: 1 x 4
+##     snaive           ets                     arima         mixed
+##    &lt;model&gt;       &lt;model&gt;                   &lt;model&gt;       &lt;model&gt;
+## 1 &lt;SNAIVE&gt; &lt;ETS(M,Ad,M)&gt; &lt;ARIMA(2,1,1)(1,1,2)[12]&gt; &lt;COMBINATION&gt;</code></pre>
+<p>The <code>mixed</code> model is of type <code>&lt;COMBINATION&gt;</code> indicating that it has combined the three models. In this case, it has assigned each model an equal weight, but you can choose a different weighting system. By using the <code>report()</code> function, we can see the individual models that make up the ensemble and how they are added together. Note that as of the publication date of this post, the <code>tidy()</code> function cannot be used on <code>an object of class "model_combination"</code>.</p>
+<pre class="r"><code>victoria_dept_stores_ensemble_mbl %&gt;% 
+  select(mixed) %&gt;% 
+  report()
+## Series: Turnover 
+## Model: COMBINATION 
+## Combination: (Turnover + Turnover + Turnover) * 0.333333333333333
+## 
+## =================================================================
+## 
+## Series: Turnover + Turnover + Turnover 
+## Model: COMBINATION 
+## Combination: Turnover + Turnover + Turnover
+## 
+## ===========================================
+## 
+## Series: Turnover + Turnover 
+## Model: COMBINATION 
+## Combination: Turnover + Turnover
+## 
+## ================================
+## 
+## Series: Turnover 
+## Model: SNAIVE 
+## 
+## sigma^2: 292.2446 
+## 
+## Series: Turnover 
+## Model: ETS(M,Ad,M) 
+##   Smoothing parameters:
+##     alpha = 0.167336 
+##     beta  = 0.0015252 
+##     gamma = 0.000111099 
+##     phi   = 0.9799949 
+## 
+##   Initial states:
+##         l        b       s1       s2        s3        s4        s5        s6
+##  261.8962 2.122653 1.856338 1.102949 0.9556113 0.8697593 0.8442324 0.9481133
+##         s7        s8        s9       s10       s11      s12
+##  0.9952447 0.9489134 0.9525782 0.9034134 0.7260604 0.896787
+## 
+##   sigma^2:  0.0017
+## 
+##      AIC     AICc      BIC 
+## 2459.671 2462.943 2521.399 
+## 
+## 
+## Series: Turnover 
+## Model: ARIMA(2,1,1)(1,1,2)[12] 
+## 
+## Coefficients:
+##           ar1      ar2      ma1     sar1    sma1     sma2
+##       -0.2336  -0.1432  -0.7237  -0.8059  0.1900  -0.5586
+## s.e.   0.0939   0.0852   0.0712   0.2862  0.2785   0.1707
+## 
+## sigma^2 estimated as 193.8:  log likelihood=-872.18
+## AIC=1758.35   AICc=1758.89   BIC=1781.94</code></pre>
+<p>By themselves, the three underlying models produce the following forecasts:</p>
+<pre class="r"><code>victoria_dept_stores_ensemble_mbl %&gt;% 
+  select(-mixed) %&gt;% 
+  forecast(h = &quot;3 years&quot;) %&gt;% 
+  autoplot(victoria_dept_stores_tsbl) +
+  facet_wrap(~ .model, ncol = 1) +
+  expand_limits(y = 0) +
+  theme_bw() +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = &quot;B&quot;
+    )
+  ) +
+  labs(
+    title    = &quot;Three-Year Forecast of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Models: Seasonal Naive, ETS(M,Ad,M), ARIMA(2,1,1)(1,1,2)[12]&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-44-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>Taking a simple average of the three models, the ensemble produces the following forecast:</p>
+<pre class="r"><code>victoria_dept_stores_ensemble_mbl %&gt;% 
+  select(mixed) %&gt;% 
+  forecast(h = &quot;3 years&quot;) %&gt;% 
+  autoplot(victoria_dept_stores_tsbl) +
+  theme_minimal() +
+  expand_limits(y = 0) +
+  scale_y_continuous(
+    labels = scales::dollar_format(
+      accuracy = 0.1, 
+      scale    = 1e-3, 
+      suffix   = &quot;B&quot;
+    )
+  ) +
+  labs(
+    title    = &quot;Three-Year Forecast of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = str_glue(&quot;Ensemble model made of equal weights of: 
+                        Seasonal Naive, ETS(M,Ad,M), ARIMA(2,1,1)(1,1,2)[12]&quot;),
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-45-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="model-diagnostics" class="section level1">
+<h1>Model Diagnostics</h1>
+<p>Building a model that produces a reasonable looking forecast is good, but there are steps that must be taken to validate that model. In my case, all the models I build in my current role must be validated by our risk and compliance teams. It is important that I not only prove that my model is statistically correct, I must also justify the process I used to select the model.</p>
+<div id="information-criteria" class="section level2">
+<h2>Information Criteria</h2>
+<p>A straightforward way to justify why a certain model was chosen over another is to use various information criteria, such as <a href="https://en.wikipedia.org/wiki/AIC">AIC</a>, <a href="https://en.wikipedia.org/wiki/BIC">BIC</a>, or <a href="https://en.wikipedia.org/wiki/Akaike_information_criterion#AICc">AICc</a>. While these measures are certainly convenient, there are some very important restrictions to know.</p>
+<ul>
+<li>Comparisons can only be done on models of the same type (e.g. you cannot compare the AIC of an ETS model to that of an ARIMA model)</li>
+<li>Comparisons for ARIMA models can only be done between those models with the same number of differences (e.g. you cannot compare the AIC of an ARIMA model with d=1 to that of an ARIMA model with d=0)</li>
+</ul>
+<p>If the models in your <code>mable</code> do not fall into the above restrictions, their information criteria can be calculated using the <code>glance()</code> function.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  model(
+    arima_111 = ARIMA(Turnover ~ pdq(1,1,1) + PDQ(0,0,0)),
+    arima_212 = ARIMA(Turnover ~ pdq(2,1,2) + PDQ(0,0,0)),
+    arima_012 = ARIMA(Turnover ~ pdq(0,1,2) + PDQ(0,0,0)),
+    arima_200 = ARIMA(Turnover ~ pdq(2,1,0) + PDQ(0,0,0))
+  ) %&gt;% 
+  glance() %&gt;% 
+  select(.model, AIC, BIC, AICc)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:right;">
+AIC
+</th>
+<th style="text-align:right;">
+BIC
+</th>
+<th style="text-align:right;">
+AICc
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+arima_111
+</td>
+<td style="text-align:right;">
+2736
+</td>
+<td style="text-align:right;">
+2746
+</td>
+<td style="text-align:right;">
+2736
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_212
+</td>
+<td style="text-align:right;">
+2685
+</td>
+<td style="text-align:right;">
+2706
+</td>
+<td style="text-align:right;">
+2686
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_012
+</td>
+<td style="text-align:right;">
+2732
+</td>
+<td style="text-align:right;">
+2743
+</td>
+<td style="text-align:right;">
+2732
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+arima_200
+</td>
+<td style="text-align:right;">
+2800
+</td>
+<td style="text-align:right;">
+2810
+</td>
+<td style="text-align:right;">
+2800
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="residual-diagnostics" class="section level2">
+<h2>Residual Diagnostics</h2>
+<p>We know how to compare models from the same modeling algorithm, but what about across different algorithms? We will discuss checking the accuracy of the forecasts on out-of-sample data in the next section, but a good first step is to check the residuals. For a time-series model, we basically have two key assumptions that must be validated:</p>
+<ol style="list-style-type: decimal">
+<li>The residuals are uncorrelated</li>
+<li>The residuals have mean zero</li>
+</ol>
+<p>While not <em>necessary</em>, meeting the following assumptions are also very useful:</p>
+<ol start="3" style="list-style-type: decimal">
+<li>The residuals have constant variance</li>
+<li>The residuals are normally distributed</li>
+</ol>
+<p>Essentially, meeting all four of these assumptions means your residuals are <a href="https://en.wikipedia.org/wiki/Additive_white_Gaussian_noise">Gaussian White Noise</a>.</p>
+<p>The first thing we can do to check these assumptions is to simply plot the distribution of the residuals. The residuals from a forecast can be calculated using the <code>augment()</code> function. I will use the ARIMA models for these examples.</p>
+<pre class="r"><code>victoria_dept_stores_arima_mbl %&gt;% 
+  select(arima_auto) %&gt;% 
+  augment() %&gt;% 
+  ggplot() +
+  geom_histogram(aes(x = .resid), color = &quot;white&quot;) +
+  theme_minimal() +
+  labs(
+    title    = str_glue(&quot;Yearly Retail Turnover for Victoria: 
+                        Distribution of Residuals&quot;),
+    subtitle = &quot;Model: ARIMA(2,1,1)(1,1,2)[12]&quot;,
+    x        = &quot;Residual&quot;,
+    y        = &quot;Count&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-48-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>Basic time-series are also helpful to see if there are any dramatic outliers and at what observation they occurred.</p>
+<pre class="r"><code>victoria_dept_stores_arima_mbl %&gt;% 
+  select(arima_auto) %&gt;% 
+  augment() %&gt;% 
+  autoplot(.resid) +
+  theme_minimal() +
+  labs(
+    title    = str_glue(&quot;Yearly Retail Turnover for Victoria: 
+                        Time-Series Residuals&quot;),
+    subtitle = &quot;Model: ARIMA(2,1,1)(1,1,2)[12]&quot;,
+    x        = &quot;Month&quot;,
+    y        = &quot;Residual&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-49-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>We can get a little more quantitatively statistical, rather than purely visual, by plotting the ACF of the residuals. We can see the amount of autocorrelation, if any exists.</p>
+<pre class="r"><code>victoria_dept_stores_arima_mbl %&gt;% 
+  select(arima_auto) %&gt;% 
+  augment() %&gt;% 
+  ACF(.resid) %&gt;% 
+  autoplot() +
+  theme_minimal() +
+  labs(
+    title    = &quot;Yearly Retail Turnover for Victoria:  ACF Plot&quot;,
+    subtitle = &quot;Model: ARIMA(2,1,1)(1,1,2)[12]&quot;,
+    x        = &quot;Lag (Month)&quot;,
+    y        = &quot;ACF&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-07-rstudio-conf-2020-tidy-forecasting-part-2_files/figure-html/unnamed-chunk-50-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>Based on the plots we have seen so far, the residuals look roughly normal, and the ACF shows no autocorrelation. To formalize these observations, we can run a <a href="https://en.wikipedia.org/wiki/Ljung%E2%80%93Box_test">Ljung-Box Test</a>. The null hypothesis is that the residual series is not autocorrelated. We want to fail to reject the null (i.e. have a p-value greater than 0.05). We can pass the <code>ljug_box()</code> function into the <code>features()</code> function to run this test. There are two parameters of the test we must define:</p>
+<ol style="list-style-type: decimal">
+<li>Degrees of Freedom (<code>dof</code>): the number of parameters in the model (e.g. zero for Naive, p + q for ARIMA)</li>
+<li>Number of Lags Tested (<code>lag</code>): Dr. Hyndman suggests a value of 10 for non-seasonal data and 2 times the seasonal period for seasonal data (e.g. if monthly, 2 * 12 = 24)</li>
+</ol>
+<pre class="r"><code>victoria_dept_stores_arima_mbl %&gt;% 
+  select(arima_auto) %&gt;% 
+  augment() %&gt;% 
+  features(.resid, ljung_box, dof = 2+1+1+2, lag = 2*12) </code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:right;">
+lb_stat
+</th>
+<th style="text-align:right;">
+lb_pvalue
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+arima_auto
+</td>
+<td style="text-align:right;">
+11.53
+</td>
+<td style="text-align:right;">
+0.87
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div id="forecast-accuracy" class="section level1">
+<h1>Forecast Accuracy</h1>
+<p>The final step we can take is to forecast on out-of-sample data and check how accurate that forecast is. In general, what we want to do is:</p>
+<ol style="list-style-type: decimal">
+<li>Separate some portion of the most recent data before fitting a model</li>
+<li>Train the model on the remaining data</li>
+<li>Calculate some accuracy metric using the training data</li>
+<li>Calculate some accuracy metric using the held-out data</li>
+<li>Compare the two accuracy metrics (we want them to be similar, showing that the model generalizes well to data it has not seen before)</li>
+</ol>
+<p>Whereas the information criteria can only be used to compare models of the same type, comparing accuracy can be done across model types. Commonly used accuracy measures include:</p>
+<ul>
+<li>Mean Absolute Percentage Error <a href="https://en.wikipedia.org/wiki/Mean_absolute_percentage_error">(MAPE)</a></li>
+<li>Root Mean Square Error <a href="https://en.wikipedia.org/wiki/Root-mean-square_deviation">(RMSE)</a></li>
+<li>Mean Absolute Scaled Error <a href="https://en.wikipedia.org/wiki/Mean_absolute_scaled_error">(MASE)</a></li>
+</ul>
+<p>The accuracy on the training data can be calculated by passing the model straight into the <code>accuracy()</code> function.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  filter(year(Month) &lt;= 2015) %&gt;% 
+  model(arima = ARIMA(Turnover)) -&gt; victoria_dept_stores_train_arima_mbl
+
+victoria_dept_stores_train_arima_mbl %&gt;% 
+  accuracy() %&gt;% 
+  select(.model, .type, MAPE, RMSE, MASE)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:left;">
+.type
+</th>
+<th style="text-align:right;">
+MAPE
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+MASE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+arima
+</td>
+<td style="text-align:left;">
+Training
+</td>
+<td style="text-align:right;">
+2.98
+</td>
+<td style="text-align:right;">
+13.44
+</td>
+<td style="text-align:right;">
+0.68
+</td>
+</tr>
+</tbody>
+</table>
+<p>The accuracy on the held out data takes an additional step. First, use the <code>forecast()</code> function to forecast over an arbitrary horizon, and then pass that <code>fable</code> into the <code>accuracy()</code> function, along with the training data.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  filter(year(Month) &gt; 2015) %&gt;% 
+  forecast(object = victoria_dept_stores_train_arima_mbl) %&gt;% 
+  accuracy(victoria_dept_stores_tsbl) %&gt;% 
+  select(.model, .type, MAPE, RMSE, MASE)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+.model
+</th>
+<th style="text-align:left;">
+.type
+</th>
+<th style="text-align:right;">
+MAPE
+</th>
+<th style="text-align:right;">
+RMSE
+</th>
+<th style="text-align:right;">
+MASE
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+arima
+</td>
+<td style="text-align:left;">
+Test
+</td>
+<td style="text-align:right;">
+3.93
+</td>
+<td style="text-align:right;">
+16.93
+</td>
+<td style="text-align:right;">
+0.94
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="recap" class="section level1">
+<h1>Recap</h1>
+<p>The second day of the workshop focused on forecasting methods, model algorithms, validating those models, and producing and checking the accuracy of forecasts. We covered:</p>
+<ol style="list-style-type: decimal">
+<li>Building baseline models</li>
+<li>Building more complex models</li>
+<li>Validating time-series models</li>
+<li>Producing forecasts</li>
+<li>Determining forecast accuracy</li>
+</ol>
+<p>Again, a big thanks to the Dr. Hyndman and and the <code>tidyverts</code> team for building these packages and putting together a fantastic workshop!</p>
+</div>
+<div id="more-information" class="section level1">
+<h1>More Information</h1>
+<p>The best source of additional information on the <code>tidyverts</code> ecosystem is the <a href="https://tidyverts.org/">official website</a>.</p>
+<p>For more examples and explanations on the theoretical background of time-series forecasting, please see the <a href="https://otexts.com/fpp3/">3rd Edition</a> of <strong>Forecasting Practices and Principles</strong>, co-authored by Dr. Rob Hyndman. This book goes into depth on most of the topics covered in the workshop. During the workshop, Dr. Hyndman mentioned that a new edition of the book would be coming out with updated <code>tidyverts</code> integration, but did not have a specific date available.</p>
+<p>Any issues with the packages in the <code>tidyverts</code> can be opened and tracked via their respective <a href="https://github.com/tidyverts">GitHub repositories</a>.</p>
+<p>Finally, the <a href="https://community.rstudio.com/">RStudio Community</a> is a great place to ask for and receive help. There are several <code>tidyverts</code> questions already posted, and at least one of the package authors is known to be an active member.</p>
+</div>

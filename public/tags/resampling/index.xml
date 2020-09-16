@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>resampling on Robert Lankford</title>
+    <link>/tags/resampling/</link>
+    <description>Recent content in resampling on Robert Lankford</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 22 Mar 2020 00:00:00 +0000</lastBuildDate>
+    
+	<atom:link href="/tags/resampling/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>The rsample Package</title>
+      <link>/demo/the-rsample-package/</link>
+      <pubDate>Sun, 22 Mar 2020 00:00:00 +0000</pubDate>
+      
+      <guid>/demo/the-rsample-package/</guid>
+      <description>
+&lt;script src=&#34;/rmarkdown-libs/kePrint/kePrint.js&#34;&gt;&lt;/script&gt;
+&lt;link href=&#34;/rmarkdown-libs/lightable/lightable.css&#34; rel=&#34;stylesheet&#34; /&gt;
+
+
+&lt;p&gt;The following is a demo of data splitting and resampling with the &lt;code&gt;rsample&lt;/code&gt; package from the &lt;code&gt;tidymodels&lt;/code&gt; ecosystem.&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

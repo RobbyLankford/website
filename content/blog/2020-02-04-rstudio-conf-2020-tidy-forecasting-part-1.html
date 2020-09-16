@@ -1,0 +1,416 @@
+---
+title: "rstudio::conf 2020 Tidy Forecasting #1"
+author: Robert Lankford
+date: '2020-02-04'
+slug: rstudio-conf-2020-tidy-forecasting-1
+editor_options: 
+  chunk_output_type: console
+---
+
+<script src="/rmarkdown-libs/kePrint/kePrint.js"></script>
+<link href="/rmarkdown-libs/lightable/lightable.css" rel="stylesheet" />
+
+
+<p>This post is the first in a series documenting my experience in the <a href="https://education.rstudio.com/blog/2020/02/conf20-ts/">Tidy Time Series and Forecasting in R workshop</a> at <a href="https://rstudio.com/resources/rstudioconf-2020/">rstudio::conf 2020</a> in San Francisco, CA.</p>
+<!--more-->
+<p>In my daily work, I have recently started working on more forecasting-type projects. As these requests keep increasing, I have been searching for a more streamlined approach to time-series modeling and forecasting in R. While R has a variety of tools to handle time-series, I wanted to use something that has both a consistent API (so that my documentation remains consistent between projects) and the ability to experiement with many models as quickly as possible. I stumbled across the <a href="https://tidyverts.org/"><code>tidyverts</code></a> family of packages about halfway through my first batch of forecasting projects and have been working to incorporate them into my workflow ever since.</p>
+<p>Last week, I had the opportunity to go to San Francisco for rstudio::conf 2020 and take the <a href="https://github.com/rstudio-conf-2020/time-series-forecasting">Tidy Time Series and Forecasting in R</a> workshop with <a href="https://robjhyndman.com/">Dr. Rob Hyndman</a>. This is the first of two posts that will document some of the most interesting and useful things I picked up at the workshop.</p>
+<p>Following what was presented to us at the two-day workshop, the first post will be “everything that <em>is not</em> forecasting”, and the second post will be “everything that <em>is</em> forecasting”.</p>
+<div id="setup" class="section level1">
+<h1>Setup</h1>
+<p>The first day focused on understanding the architecture that underpins the <code>tidyverts</code>, how to visualize time-series, and ways to transform a time-series.</p>
+<p>The following packages are required:</p>
+<pre class="r"><code># Tidyverse
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+
+# Tidyverts
+library(tsibble)
+library(feasts)
+library(fable)
+
+# Plotting
+library(ggplot2)</code></pre>
+<p>The following data sets are used throughout this post. These data are sourced from the <code>tsibbledata</code> package, a part of the <code>tidyverts</code>.</p>
+<ol style="list-style-type: decimal">
+<li>Monthly retail turnover for department stores in Victoria, Australia</li>
+</ol>
+<pre class="r"><code>tsibbledata::aus_retail %&gt;% 
+  filter(
+    Industry == &quot;Department stores&quot;,
+    State == &quot;Victoria&quot;,
+    year(Month) &gt;= 2000
+  ) %&gt;% 
+  select(Month, Turnover) -&gt; victoria_dept_stores_tsbl</code></pre>
+<pre><code>## # A tsibble: 228 x 2 [1M]
+##       Month Turnover
+##       &lt;mth&gt;    &lt;dbl&gt;
+##  1 2000 Jan     228 
+##  2 2000 Feb     196.
+##  3 2000 Mar     224.
+##  4 2000 Apr     261.
+##  5 2000 May     265.
+##  6 2000 Jun     299.
+##  7 2000 Jul     206.
+##  8 2000 Aug     240.
+##  9 2000 Sep     251.
+## 10 2000 Oct     270.
+## # ... with 218 more rows</code></pre>
+<ol start="2" style="list-style-type: decimal">
+<li>Quarterly sheep meat production in Victoria, Australia</li>
+</ol>
+<pre class="r"><code>tsibbledata::aus_livestock %&gt;% 
+  filter(State == &quot;Victoria&quot;, Animal == &quot;Sheep&quot;) -&gt; victoria_sheep_tsbl</code></pre>
+<pre><code>## # A tsibble: 228 x 2 [1M]
+##       Month Turnover
+##       &lt;mth&gt;    &lt;dbl&gt;
+##  1 2000 Jan     228 
+##  2 2000 Feb     196.
+##  3 2000 Mar     224.
+##  4 2000 Apr     261.
+##  5 2000 May     265.
+##  6 2000 Jun     299.
+##  7 2000 Jul     206.
+##  8 2000 Aug     240.
+##  9 2000 Sep     251.
+## 10 2000 Oct     270.
+## # ... with 218 more rows</code></pre>
+<ol start="3" style="list-style-type: decimal">
+<li>Monthly turnover for food retail in Victoria, Australia</li>
+</ol>
+<pre class="r"><code>tsibbledata::aus_retail %&gt;% 
+  filter(State == &quot;Victoria&quot;, Industry == &quot;Food retailing&quot;) %&gt;% 
+  select(Month, Turnover) -&gt; victoria_food_retail_tsbl</code></pre>
+<pre class="r"><code>victoria_food_retail_tsbl
+## # A tsibble: 441 x 2 [1M]
+##       Month Turnover
+##       &lt;mth&gt;    &lt;dbl&gt;
+##  1 1982 Apr     310.
+##  2 1982 May     310.
+##  3 1982 Jun     314.
+##  4 1982 Jul     320.
+##  5 1982 Aug     300.
+##  6 1982 Sep     316.
+##  7 1982 Oct     344.
+##  8 1982 Nov     352.
+##  9 1982 Dec     408.
+## 10 1983 Jan     330.
+## # ... with 431 more rows</code></pre>
+</div>
+<div id="the-tsibble-object" class="section level1">
+<h1>The <code>tsibble</code> Object</h1>
+<p>In the past, I have tried a few variations of the “time-series data frame”, such as <a href="https://github.com/business-science/tibbletime"><code>tibbletime</code></a> from <a href="https://www.business-science.io/">Business Science</a>. That worked well for me, but it has now been retired in favor of the <a href="https://tsibble.tidyverts.org/"><code>tsibble</code></a>.</p>
+<p>Turning a tibble (or a standard data frame) into a <code>tsibble</code> is done with the <code>as_tsibble()</code> function. Specify the <code>index</code> argument as the name of your time-index column. When printing a <code>tsibble</code>, the top line will tell you:</p>
+<ol style="list-style-type: decimal">
+<li>That it is a <code>tsibble</code> object</li>
+<li>The dimension of the <code>tsibble</code> (rows by columns)</li>
+<li>The frequency of the time-index in brackets (below, 1D is a frequency of one day)</li>
+</ol>
+<pre class="r"><code>dates &lt;- seq.Date(
+  from = as_date(&quot;2020-01-01&quot;), 
+  to   = as_date(&quot;2020-01-05&quot;), 
+  by   = &quot;day&quot;
+)
+
+data_tbl  &lt;- tibble(time  = dates, value = c(&quot;a&quot;, &quot;b&quot;, &quot;c&quot;, &quot;d&quot;, &quot;e&quot;))
+data_tsbl &lt;- as_tsibble(data_tbl, index = time)</code></pre>
+<pre><code>## # A tibble: 5 x 2
+##   time       value
+##   &lt;date&gt;     &lt;chr&gt;
+## 1 2020-01-01 a    
+## 2 2020-01-02 b    
+## 3 2020-01-03 c    
+## 4 2020-01-04 d    
+## 5 2020-01-05 e</code></pre>
+<pre><code>## # A tsibble: 5 x 2 [1D]
+##   time       value
+##   &lt;date&gt;     &lt;chr&gt;
+## 1 2020-01-01 a    
+## 2 2020-01-02 b    
+## 3 2020-01-03 c    
+## 4 2020-01-04 d    
+## 5 2020-01-05 e</code></pre>
+<p>If your data frame contains multiple time series (e.g. yearly GDP for multiple countries), specify the grouping column as the <code>key</code> argument in <code>as_tsibble()</code>. One restriction on a <code>tsibble</code> is that each row must be a unique observation or measurement across both the time-index and the keys (e.g. only one measurement of GDP for one year for one country). This allows you to have multiple keys, further expanding how many individual time series can be housed in a single <code>tsibble.</code> The printout of the <code>tsibble</code> will show what the keys are and how many unique combinations of those keys exist.</p>
+<pre class="r"><code>data_2_tbl &lt;- tibble(
+  date       = sort(rep(dates, 2)),
+  category_1 = c(&quot;a&quot;, &quot;a&quot;, &quot;b&quot;, &quot;b&quot;, &quot;c&quot;, &quot;c&quot;, &quot;d&quot;, &quot;d&quot;, &quot;e&quot;, &quot;e&quot;),
+  category_2 = c(&quot;f&quot;, &quot;g&quot;, &quot;f&quot;, &quot;g&quot;, &quot;f&quot;, &quot;g&quot;, &quot;f&quot;, &quot;g&quot;, &quot;f&quot;, &quot;g&quot;),
+  value      = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+)
+
+data_2_tsbl &lt;- as_tsibble(
+  data_2_tbl, 
+  index = date, 
+  key   = c(category_1, category_2)
+)</code></pre>
+<pre><code>## # A tibble: 10 x 4
+##    date       category_1 category_2 value
+##    &lt;date&gt;     &lt;chr&gt;      &lt;chr&gt;      &lt;dbl&gt;
+##  1 2020-01-01 a          f              1
+##  2 2020-01-01 a          g              2
+##  3 2020-01-02 b          f              3
+##  4 2020-01-02 b          g              4
+##  5 2020-01-03 c          f              5
+##  6 2020-01-03 c          g              6
+##  7 2020-01-04 d          f              7
+##  8 2020-01-04 d          g              8
+##  9 2020-01-05 e          f              9
+## 10 2020-01-05 e          g             10</code></pre>
+<pre><code>## # A tsibble: 10 x 4 [1D]
+## # Key:       category_1, category_2 [10]
+##    date       category_1 category_2 value
+##    &lt;date&gt;     &lt;chr&gt;      &lt;chr&gt;      &lt;dbl&gt;
+##  1 2020-01-01 a          f              1
+##  2 2020-01-01 a          g              2
+##  3 2020-01-02 b          f              3
+##  4 2020-01-02 b          g              4
+##  5 2020-01-03 c          f              5
+##  6 2020-01-03 c          g              6
+##  7 2020-01-04 d          f              7
+##  8 2020-01-04 d          g              8
+##  9 2020-01-05 e          f              9
+## 10 2020-01-05 e          g             10</code></pre>
+</div>
+<div id="time-series-plots" class="section level1">
+<h1>Time-Series Plots</h1>
+<p>Often times, simply plotting time-series data is overlooked. It can be one of the most important steps in understanding your data well enough to produce a reasonable forecast. There are many methods the <code>tidyverts</code> provides to visualize time-series data. Most of those functions are found in the <a href="https://feasts.tidyverts.org/"><code>feasts</code></a> package.</p>
+<div id="basic-time-series-plot" class="section level2">
+<h2>Basic Time-Series Plot</h2>
+<p>The most basic plot for time-series data is an ordered line plot. This can easily be handled with the <code>autoplot()</code> function. The output is a <code>ggplot</code> object, so you can add other layers such as labels and themes.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  autoplot(Turnover) +
+  expand_limits(y = 0) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::dollar_format(prefix = &quot;$&quot;, suffix = &quot;M&quot;)) +
+  labs(
+    title    = &quot;Yearly Retail Turnover for Victoria, Australia&quot;,
+    subtitle = &quot;Sourced from the tsibbledata package&quot;,
+    caption  = &quot;Original source: Australian Bureau of Statistics&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-15-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>To tease out possible seasonality, the <code>gg_season()</code> function can be used. This plots an individual line plot for each “one-level-up” time-period specified in your <code>tsibble</code>. In the example below, the <code>tsibble</code> has monthly data specified, so each line plot is a single year (a year is one-level-up from a month). This plot helps to see if there are seasonal patterns that repeat, for this example, in the same months every year.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  gg_season(Turnover, labels = &quot;right&quot;) +
+  expand_limits(y = 0) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::dollar_format(prefix = &quot;$&quot;, suffix = &quot;M&quot;)) +
+  labs(
+    title    = &quot;Seasonality of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Generated with the &#39;gg_season()&#39; function&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-16-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="seasonal-subseries-plot" class="section level2">
+<h2>Seasonal Subseries Plot</h2>
+<p>Another good way to examine seasonality is to fully separate out each season. This can be done with the <code>gg_subseries()</code> function. As seen below, department store turnover (unsurprisingly) peaks each December. From the previous plot, we saw that this repeats every year in the data. Whereas the last plot plots out a line for each “one-step-up” time-index, the plot below plots out a line for each time-index. In these examples, the previous plot plotted a line for each year (across all months in those years), the plot below plots a line for each month (across all years, grouping on the month).</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  gg_subseries(Turnover) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = &quot;$&quot;, suffix = &quot;M&quot;), 
+    limits = c(0, NA)
+  ) +
+  labs(
+    title    = &quot;Seasonality of Yearly Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Generated with the &#39;gg_subseries()&#39; function&quot;,
+    x        = &quot;&quot;,
+    y        = &quot;Australian Dollars&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-17-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="lag-plot" class="section level2">
+<h2>Lag Plot</h2>
+<p>Often we want to see how the current values of a time-series relate to their past values. This can be done with the <code>gg_lag()</code> function, which plots each value with its n-th lag. Below, we can see how the lags correlate across months. There is some correlation across the lags, but the 12th lag shows the strongest. This is not surprising, as we have already seen that there is yearly seasonality in this data.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  gg_lag(Turnover, geom = &quot;point&quot;, lags = 1:12) +
+  theme_bw() +
+  scale_x_continuous(
+    labels = scales::dollar_format(prefix = &quot;$&quot;, suffix = &quot;M&quot;),
+    limits = c(0, NA), 
+    breaks = c(0, 300, 600)
+  ) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = &quot;$&quot;, suffix = &quot;M&quot;), 
+    limits = c(0, NA), 
+    breaks = c(0, 300, 600)
+  ) +
+  labs(
+    title    = &quot;Monthly Lagged Correlations of Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Generated with the &#39;gg_lag()&#39; function&quot;,
+    x        = &quot;Australian Dollars (original)&quot;,
+    y        = &quot;Australian Dollars (lagged)&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-18-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="autocorrelation-plot" class="section level2">
+<h2>Autocorrelation Plot</h2>
+<p>To further investigate, we can calculate and plot the autocorrelations. The autocorrelation function (ACF) calculates the correlation of the observations against various lags. This can be done using the <code>ACF()</code> function along with the <code>autoplot()</code> function.</p>
+<pre class="r"><code>victoria_dept_stores_tsbl %&gt;% 
+  ACF(Turnover, lag_max = 24) %&gt;% 
+  autoplot() +
+  theme_minimal() +
+  labs(
+    title    = &quot;Autocorrelation Plot of Retail Turnover for Victoria&quot;,
+    subtitle = &quot;Generated with the &#39;gg_lag()&#39; function&quot;,
+    x        = &quot;Lag (1 month)&quot;,
+    y        = &quot;ACF&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-19-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+</div>
+<div id="transformations" class="section level1">
+<h1>Transformations</h1>
+<p>It is common in time-series problems to apply some transformation to the data to stabilize its variance. The following plot shows a time-series where the variance changes quite drastically over time.</p>
+<pre class="r"><code>victoria_sheep_tsbl %&gt;% 
+  autoplot(Count) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma_format(scale = 1e-6, suffix = &quot;M&quot;)) +
+  labs(
+    title    = &quot;Quarterly Sheep Meat Production for Victoria&quot;,
+    subtitle = &quot;Sourced from the tsibbledata package&quot;,
+    caption  = &quot;Original source: Australian Bureau of Statistics&quot;,
+    x        = &quot;Quarter&quot;,
+    y        = &quot;Count of Slaughtered Sheep&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-20-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>Common transformations include:</p>
+<ul>
+<li>log</li>
+<li>square root</li>
+<li>inverse</li>
+</ul>
+<pre class="r"><code>victoria_sheep_tsbl %&gt;% 
+  rename(Original = Count) %&gt;% 
+  mutate(
+    Log           = log(Original),
+    `Square Root` = sqrt(Original),
+    Inverse       = 1 / Original
+  ) %&gt;% 
+  pivot_longer(cols = Original:Inverse, names_to = &quot;Transformation&quot;) %&gt;% 
+  as_tsibble(
+    index = Month, 
+    key   = Transformation
+  ) %&gt;% 
+  
+  autoplot(value) +
+  facet_wrap(~ Transformation, ncol = 1, scales = &quot;free_y&quot;) +
+  theme_bw() +
+  theme(legend.position = &quot;none&quot;) +
+  labs(
+    title    = &quot;Quarterly Sheep Meat Production for Victoria&quot;,
+    subtitle = &quot;Different transformations applied to original series&quot;,
+    x        = &quot;Quarter&quot;,
+    y        = &quot;(Transformation of the) Count of Slaughtered Sheep&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-21-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>Some transformations seem to not stabilize the variance enough, while others seem to go too far.</p>
+<p>Another common transformation methodology is a <a href="https://en.wikipedia.org/wiki/Power_transform#Box%E2%80%93Cox_transformation">Box-Cox Transformation</a>. The <code>lambda</code> value controls the type and strength of the transformation. While there is not necessarily a widely accepted formal method for determining the optimal lambda value, the <a href="https://feasts.tidyverts.org/reference/guerrero.html">Guerrero</a> method can often be used as a good starting point. We can implement this method by passing the <code>guerrero()</code> function into the <code>features()</code> function.</p>
+<pre class="r"><code>victoria_sheep_tsbl %&gt;% 
+  features(Count, guerrero)</code></pre>
+<table class="table table-striped table-hover" style="width: auto !important; margin-left: auto; margin-right: auto;">
+<thead>
+<tr>
+<th style="text-align:left;">
+Animal
+</th>
+<th style="text-align:left;">
+State
+</th>
+<th style="text-align:right;">
+lambda_guerrero
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Sheep
+</td>
+<td style="text-align:left;">
+Victoria
+</td>
+<td style="text-align:right;">
+-0.33
+</td>
+</tr>
+</tbody>
+</table>
+<p>While the Guerrero method implemented above results in a negative lambda value, Dr. Hyndman mentioned that he has never used a negative lambda, and recommends that it be avoided.</p>
+<p>Another option for finding a reasonable lambda value is to simply try several values of lambda and visually inspect the results. The Box-Cox transformed values can be calculated using the <code>box_cox()</code> function. Below, we try a few common values of lambda and plot the results.</p>
+<pre class="r"><code>tibble(lambda = c(0, 0.5, 1, 2)) %&gt;% 
+  mutate(
+    victoria_sheep_transformed = map(
+      .x = lambda,
+      .f = ~ victoria_sheep_tsbl %&gt;% 
+        as_tibble() %&gt;% 
+        mutate(Count = box_cox(Count, .x))
+    )
+  ) %&gt;% 
+  unnest(victoria_sheep_transformed) %&gt;% 
+  mutate(lambda = as.factor(lambda)) %&gt;% 
+  
+  ggplot(aes(x = Month, y = Count, color = lambda)) +
+  geom_line() +
+  facet_wrap(~ lambda, ncol = 1, scales = &quot;free_y&quot;) +
+  theme_bw() +
+  theme(legend.position = &quot;none&quot;) +
+  labs(
+    title    = &quot;Box-Cox Transformations of Quarterly Sheep Meat Production&quot;,
+    subtitle = &quot;Different values of lambda applied to original series&quot;,
+    x        = &quot;Quarter&quot;,
+    y        = &quot;(Transformation of the) Count of Slaughtered Sheep&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-24-1.png" width="672" style="display: block; margin: auto;" /></p>
+<p>None of these values look that great.</p>
+<p>To demonstrate what a successful variance stabilization would look like, we can look at what happens with the following data set:</p>
+<pre class="r"><code>victoria_food_retail_tsbl %&gt;% 
+  rename(Original = Turnover) %&gt;% 
+  mutate(
+    `Square Root` = Original ^ (1/2),
+    Log           = log(Original)
+  ) %&gt;% 
+  pivot_longer(
+    cols         = -Month, 
+    names_to     = &quot;Transformation&quot;,
+    names_ptypes = list(
+      Transformation = factor(levels = c(&quot;Original&quot;, &quot;Square Root&quot;, &quot;Log&quot;))
+    )
+  ) %&gt;% 
+  as_tsibble(index = Month, key = Transformation) %&gt;% 
+  
+  autoplot(value) +
+  facet_wrap(~ Transformation, ncol = 1, scales = &quot;free_y&quot;) +
+  theme_bw() +
+  theme(legend.position = &quot;none&quot;) +
+  labs(
+    title    = &quot;Yearly Food Retail Turnover for Victoria, Australia&quot;,
+    subtitle = &quot;Different transformations applied to the original series&quot;,
+    x        = &quot;Quarter&quot;,
+    y        = &quot;(Transformation of) Australian Dollars ($M)&quot;
+  )</code></pre>
+<p><img src="/blog/2020-02-04-rstudio-conf-2020-tidy-forecasting-part-1_files/figure-html/unnamed-chunk-25-1.png" width="672" style="display: block; margin: auto;" /></p>
+</div>
+<div id="recap" class="section level1">
+<h1>Recap</h1>
+<p>The first day of the workshop focused on all of the foundational work to build up to forecasting. We covered:</p>
+<ol style="list-style-type: decimal">
+<li>What a <code>tsibble</code> is</li>
+<li>Time-series plots</li>
+<li>Time-series transformations</li>
+</ol>
+<p>The next post will document day 2 of the workshop. Day 2 consisted of:</p>
+<ol style="list-style-type: decimal">
+<li>Building time-series models</li>
+<li>Validating time-series models</li>
+<li>Producing forecasts</li>
+<li>Determining forecast accuracy</li>
+</ol>
+<p>Big thanks to the Dr. Hyndman and and the <a href="https://github.com/orgs/tidyverts/people"><code>tidyverts</code> team</a> for building these packages and putting together a fantastic workshop!</p>
+</div>

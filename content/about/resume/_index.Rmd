@@ -1,0 +1,78 @@
+---
+output: html_document
+---
+
+```{css, echo=FALSE}
+body {
+  text-align: justify;
+}
+```
+
+
+<h1><center><strong>Robert Lankford</strong></center></h1>
+
+<center>
+704-242-1716 | robbylankford@gmail.com | Boston, MA \
+[LinkedIn](https://www.linkedin.com/in/robertjlankford/) | [robertlankford.com](https://www.robertlankford.com/) | [GitHub](https://github.com/RobbyLankford)
+</center>
+
+<br>
+
+<h4><strong>PROFESSIONAL OVERVIEW</strong></h4>
+
+<hr></hr>
+
+Data scientist with 2+ years professional experience and expertise in advanced statistical modeling, forecasting, and big data in banking and financial services. Dedicated and involved leader with exceptional attention to detail and problem-solving abilities. Strong communication skills to understand and define business needs; collaborate with management, analytic teams, and key stakeholders; and deliver data-driven insights, solutions, and business value.
+
+<br>
+
+<h4><strong>EXPERIENCE</strong></h4>
+
+<hr></hr>
+
+<strong>DATA SCIENTIST</strong> [Nov. 2019 - Present]{style="float:right"} \
+Ally Financial Inc. | Boston, MA 
+
+Responsible for providing key data science support to all lines of business, such as forecasting key business and operational metrics, developing statistical models to predict customer behavior, and building internal web applications and software packages to bring data science into production. Demonstrated successes and accomplishments:
+
+* Rebuild existing and create new customer contact volume forecasting models, increasing forecast accuracy by **up to 80%** and decreasing average delay in time to respond to customers by **up to 50%**
+* Develop automated systems and processes to monitor models in production, implementing near real-time performance tracking of accuracy and potential model drift
+* Influence adoption and growth of data science at Ally by leading education workshops, developing and maintaining proprietary software, and assisting in establishing and standardizing appropriate tools and best practices for the company
+
+<strong>JUNIOR DATA SCIENTIST</strong> [Jan. 2018 - Nov. 2019]{style="float:right"} \
+Ally Financial Inc. | Charlotte, NC
+
+Provided analytical and data science support to customer contact centers, specifically using predictive modeling for prospective customer targeting. Demonstrated successes and accomplishments:
+
+* Constructed a prospective customer targeting algorithm that yielded a **$100M increase** in funded mortgage loans
+* Built web application that captured, identified, and aggregated **over 300M** unique customer touchpoints across the business
+* Established relationship with Enterprise Model Risk Management team to ensure all models meet compliance, specifically with SR 11-7, and assisted in developing and standardizing model documentation requirements
+
+<br>
+
+<h4><strong>EDUCATION</strong></h4>
+
+<hr></hr>
+
+<strong>Pennsylvania State University</strong> [Expected Dec. 2021]{style="float:right"} \
+Master of Applied Statistics
+
+<strong>University of North Carolina - Charlotte</strong> [Dec. 2017]{style="float:right"} \
+Master of Science in Mathematical Finance
+
+* Concentration in Financial Data Analytics
+
+<strong>University of North Carolina - Charlotte</strong> [May 2016]{style="float:right"} \
+Bachelor of Science in Civil and Environmental Engineering
+
+* Recipient of the <em>[Levine Scholarship](https://levinescholars.uncc.edu/)</em>, Charlotte's most prestigious merit-based scholarship program
+* Minor in Actuarial Mathematics, passed Exam FM and Exam P
+
+<br>
+
+<h4><strong>SKILLS</strong></h4>
+
+<hr></hr>
+
+Languages: R | Python | SQL | Git | HTML | CSS \
+Software: RStudio | Microsoft Power BI | Hadoop | Impala | Hive | Spark | DataRobot | AWS EC2 | Docker | h2o.ai

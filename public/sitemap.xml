@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  
+  <url>
+    <loc>/</loc>
+    <lastmod>2020-03-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/demo/</loc>
+    <lastmod>2020-03-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/tags/modeling/</loc>
+    <lastmod>2020-03-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/tags/r/</loc>
+    <lastmod>2020-03-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/tags/resampling/</loc>
+    <lastmod>2020-03-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/tags/</loc>
+    <lastmod>2020-03-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/demo/the-rsample-package/</loc>
+    <lastmod>2020-03-22T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/blog/</loc>
+    <lastmod>2020-02-10T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/blog/rstudio-conf-2020-tidy-forecasting-2/</loc>
+    <lastmod>2020-02-10T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/blog/rstudio-conf-2020-tidy-forecasting-1/</loc>
+    <lastmod>2020-02-04T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>/about/resume/</loc>
+  </url>
+  
+  <url>
+    <loc>/about/</loc>
+  </url>
+  
+  <url>
+    <loc>/categories/</loc>
+  </url>
+  
+</urlset>

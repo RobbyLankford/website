@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Blog on Robert Lankford</title>
+    <link>/blog/</link>
+    <description>Recent content in Blog on Robert Lankford</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Mon, 10 Feb 2020 00:00:00 +0000</lastBuildDate>
+    
+	<atom:link href="/blog/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>rstudio::conf 2020 Tidy Forecasting #2</title>
+      <link>/blog/rstudio-conf-2020-tidy-forecasting-2/</link>
+      <pubDate>Mon, 10 Feb 2020 00:00:00 +0000</pubDate>
+      
+      <guid>/blog/rstudio-conf-2020-tidy-forecasting-2/</guid>
+      <description>
+&lt;script src=&#34;/rmarkdown-libs/kePrint/kePrint.js&#34;&gt;&lt;/script&gt;
+&lt;link href=&#34;/rmarkdown-libs/lightable/lightable.css&#34; rel=&#34;stylesheet&#34; /&gt;
+
+
+&lt;p&gt;This post is the second in a series documenting my experience in the &lt;a href=&#34;https://education.rstudio.com/blog/2020/02/conf20-ts/&#34;&gt;Tidy Time Series and Forecasting in R workshop&lt;/a&gt; at &lt;a href=&#34;https://rstudio.com/resources/rstudioconf-2020/&#34;&gt;rstudio::conf 2020&lt;/a&gt; in San Francisco, CA.&lt;/p&gt;
+</description>
+    </item>
+    
+    <item>
+      <title>rstudio::conf 2020 Tidy Forecasting #1</title>
+      <link>/blog/rstudio-conf-2020-tidy-forecasting-1/</link>
+      <pubDate>Tue, 04 Feb 2020 00:00:00 +0000</pubDate>
+      
+      <guid>/blog/rstudio-conf-2020-tidy-forecasting-1/</guid>
+      <description>
+&lt;script src=&#34;/rmarkdown-libs/kePrint/kePrint.js&#34;&gt;&lt;/script&gt;
+&lt;link href=&#34;/rmarkdown-libs/lightable/lightable.css&#34; rel=&#34;stylesheet&#34; /&gt;
+
+
+&lt;p&gt;This post is the first in a series documenting my experience in the &lt;a href=&#34;https://education.rstudio.com/blog/2020/02/conf20-ts/&#34;&gt;Tidy Time Series and Forecasting in R workshop&lt;/a&gt; at &lt;a href=&#34;https://rstudio.com/resources/rstudioconf-2020/&#34;&gt;rstudio::conf 2020&lt;/a&gt; in San Francisco, CA.&lt;/p&gt;
+</description>
+    </item>
+    
+  </channel>
+</rss>

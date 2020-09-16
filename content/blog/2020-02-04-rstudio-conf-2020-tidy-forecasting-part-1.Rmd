@@ -1,0 +1,397 @@
+---
+title: "rstudio::conf 2020 Tidy Forecasting #1"
+author: Robert Lankford
+date: '2020-02-04'
+slug: rstudio-conf-2020-tidy-forecasting-1
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE, message = FALSE, 
+  warning = FALSE, error = FALSE,
+  fig.align = "center"
+)
+```
+
+This post is the first in a series documenting my experience in the [Tidy Time Series and Forecasting in R workshop](https://education.rstudio.com/blog/2020/02/conf20-ts/) at [rstudio::conf 2020](https://rstudio.com/resources/rstudioconf-2020/) in San Francisco, CA.
+
+<!--more-->
+
+In my daily work, I have recently started working on more forecasting-type projects. As these requests keep increasing, I have been searching for a more streamlined approach to time-series modeling and forecasting in R. While R has a variety of tools to handle time-series, I wanted to use something that has both a consistent API (so that my documentation remains consistent between projects) and the ability to experiement with many models as quickly as possible. I stumbled across the [`tidyverts`](https://tidyverts.org/) family of packages about halfway through my first batch of forecasting projects and have been working to incorporate them into my workflow ever since.
+
+Last week, I had the opportunity to go to San Francisco for rstudio::conf 2020 and take the [Tidy Time Series and Forecasting in R](https://github.com/rstudio-conf-2020/time-series-forecasting) workshop with [Dr. Rob Hyndman](https://robjhyndman.com/). This is the first of two posts that will document some of the most interesting and useful things I picked up at the workshop. 
+
+Following what was presented to us at the two-day workshop, the first post will be "everything that *is not* forecasting", and the second post will be "everything that *is* forecasting".
+
+# Setup
+
+The first day focused on understanding the architecture that underpins the `tidyverts`, how to visualize time-series, and ways to transform a time-series.
+
+The following packages are required:
+
+```{r echo=FALSE}
+library(knitr)
+library(kableExtra)
+```
+
+```{r}
+# Tidyverse
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(lubridate)
+
+# Tidyverts
+library(tsibble)
+library(feasts)
+library(fable)
+
+# Plotting
+library(ggplot2)
+```
+
+The following data sets are used throughout this post. These data are sourced from the `tsibbledata` package, a part of the `tidyverts`.
+
+1. Monthly retail turnover for department stores in Victoria, Australia 
+
+```{r}
+tsibbledata::aus_retail %>% 
+  filter(
+    Industry == "Department stores",
+    State == "Victoria",
+    year(Month) >= 2000
+  ) %>% 
+  select(Month, Turnover) -> victoria_dept_stores_tsbl
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_tsbl
+```
+
+2. Quarterly sheep meat production in Victoria, Australia
+
+```{r}
+tsibbledata::aus_livestock %>% 
+  filter(State == "Victoria", Animal == "Sheep") -> victoria_sheep_tsbl
+```
+
+```{r echo=FALSE}
+victoria_dept_stores_tsbl
+```
+
+3. Monthly turnover for food retail in Victoria, Australia
+
+```{r}
+tsibbledata::aus_retail %>% 
+  filter(State == "Victoria", Industry == "Food retailing") %>% 
+  select(Month, Turnover) -> victoria_food_retail_tsbl
+```
+
+```{r}
+victoria_food_retail_tsbl
+```
+
+# The `tsibble` Object
+
+In the past, I have tried a few variations of the "time-series data frame", such as [`tibbletime`](https://github.com/business-science/tibbletime) from [Business Science](https://www.business-science.io/). That worked well for me, but it has now been retired in favor of the [`tsibble`](https://tsibble.tidyverts.org/). 
+
+Turning a tibble (or a standard data frame) into a `tsibble` is done with the `as_tsibble()` function. Specify the `index` argument as the name of your time-index column. When printing a `tsibble`, the top line will tell you:
+
+1. That it is a `tsibble` object
+2. The dimension of the `tsibble` (rows by columns)
+3. The frequency of the time-index in brackets (below, 1D is a frequency of one day)
+
+```{r}
+dates <- seq.Date(
+  from = as_date("2020-01-01"), 
+  to   = as_date("2020-01-05"), 
+  by   = "day"
+)
+
+data_tbl  <- tibble(time  = dates, value = c("a", "b", "c", "d", "e"))
+data_tsbl <- as_tsibble(data_tbl, index = time)
+```
+
+```{r echo=FALSE}
+data_tbl
+```
+
+```{r echo=FALSE}
+data_tsbl
+```
+
+If your data frame contains multiple time series (e.g. yearly GDP for multiple countries), specify the grouping column as the `key` argument in `as_tsibble()`. One restriction on a `tsibble` is that each row must be a unique observation or measurement across both the time-index and the keys (e.g. only one measurement of GDP for one year for one country). This allows you to have multiple keys, further expanding how many individual time series can be housed in a single `tsibble.` The printout of the `tsibble` will show what the keys are and how many unique combinations of those keys exist.
+
+```{r}
+data_2_tbl <- tibble(
+  date       = sort(rep(dates, 2)),
+  category_1 = c("a", "a", "b", "b", "c", "c", "d", "d", "e", "e"),
+  category_2 = c("f", "g", "f", "g", "f", "g", "f", "g", "f", "g"),
+  value      = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+)
+
+data_2_tsbl <- as_tsibble(
+  data_2_tbl, 
+  index = date, 
+  key   = c(category_1, category_2)
+)
+```
+
+```{r echo=FALSE}
+data_2_tbl
+```
+
+```{r echo=FALSE}
+data_2_tsbl
+```
+
+# Time-Series Plots
+
+Often times, simply plotting time-series data is overlooked. It can be one of the most important steps in understanding your data well enough to produce a reasonable forecast. There are many methods the `tidyverts` provides to visualize time-series data. Most of those functions are found in the [`feasts`](https://feasts.tidyverts.org/) package.
+
+## Basic Time-Series Plot
+
+The most basic plot for time-series data is an ordered line plot. This can easily be handled with the `autoplot()` function. The output is a `ggplot` object, so you can add other layers such as labels and themes.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  autoplot(Turnover) +
+  expand_limits(y = 0) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::dollar_format(prefix = "$", suffix = "M")) +
+  labs(
+    title    = "Yearly Retail Turnover for Victoria, Australia",
+    subtitle = "Sourced from the tsibbledata package",
+    caption  = "Original source: Australian Bureau of Statistics",
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+To tease out possible seasonality, the `gg_season()` function can be used. This plots an individual line plot for each "one-level-up" time-period specified in your `tsibble`. In the example below, the `tsibble` has monthly data specified, so each line plot is a single year (a year is one-level-up from a month). This plot helps to see if there are seasonal patterns that repeat, for this example, in the same months every year.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  gg_season(Turnover, labels = "right") +
+  expand_limits(y = 0) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::dollar_format(prefix = "$", suffix = "M")) +
+  labs(
+    title    = "Seasonality of Yearly Retail Turnover for Victoria",
+    subtitle = "Generated with the 'gg_season()' function",
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+## Seasonal Subseries Plot
+
+Another good way to examine seasonality is to fully separate out each season. This can be done with the `gg_subseries()` function. As seen below, department store turnover (unsurprisingly) peaks each December. From the previous plot, we saw that this repeats every year in the data. Whereas the last plot plots out a line for each "one-step-up" time-index, the plot below plots out a line for each time-index. In these examples, the previous plot plotted a line for each year (across all months in those years), the plot below plots a line for each month (across all years, grouping on the month).
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  gg_subseries(Turnover) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = "$", suffix = "M"), 
+    limits = c(0, NA)
+  ) +
+  labs(
+    title    = "Seasonality of Yearly Retail Turnover for Victoria",
+    subtitle = "Generated with the 'gg_subseries()' function",
+    x        = "",
+    y        = "Australian Dollars"
+  )
+```
+
+## Lag Plot
+
+Often we want to see how the current values of a time-series relate to their past values. This can be done with the `gg_lag()` function, which plots each value with its n-th lag. Below, we can see how the lags correlate across months. There is some correlation across the lags, but the 12th lag shows the strongest. This is not surprising, as we have already seen that there is yearly seasonality in this data.
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  gg_lag(Turnover, geom = "point", lags = 1:12) +
+  theme_bw() +
+  scale_x_continuous(
+    labels = scales::dollar_format(prefix = "$", suffix = "M"),
+    limits = c(0, NA), 
+    breaks = c(0, 300, 600)
+  ) +
+  scale_y_continuous(
+    labels = scales::dollar_format(prefix = "$", suffix = "M"), 
+    limits = c(0, NA), 
+    breaks = c(0, 300, 600)
+  ) +
+  labs(
+    title    = "Monthly Lagged Correlations of Retail Turnover for Victoria",
+    subtitle = "Generated with the 'gg_lag()' function",
+    x        = "Australian Dollars (original)",
+    y        = "Australian Dollars (lagged)"
+  )
+```
+
+## Autocorrelation Plot
+
+To further investigate, we can calculate and plot the autocorrelations. The autocorrelation function (ACF) calculates the correlation of the observations against various lags. This can be done using the `ACF()` function along with the `autoplot()` function. 
+
+```{r}
+victoria_dept_stores_tsbl %>% 
+  ACF(Turnover, lag_max = 24) %>% 
+  autoplot() +
+  theme_minimal() +
+  labs(
+    title    = "Autocorrelation Plot of Retail Turnover for Victoria",
+    subtitle = "Generated with the 'gg_lag()' function",
+    x        = "Lag (1 month)",
+    y        = "ACF"
+  )
+```
+
+# Transformations
+
+It is common in time-series problems to apply some transformation to the data to stabilize its variance. The following plot shows a time-series where the variance changes quite drastically over time.
+
+```{r}
+victoria_sheep_tsbl %>% 
+  autoplot(Count) +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma_format(scale = 1e-6, suffix = "M")) +
+  labs(
+    title    = "Quarterly Sheep Meat Production for Victoria",
+    subtitle = "Sourced from the tsibbledata package",
+    caption  = "Original source: Australian Bureau of Statistics",
+    x        = "Quarter",
+    y        = "Count of Slaughtered Sheep"
+  )
+```
+
+Common transformations include:
+
+* log
+* square root
+* inverse
+
+```{r}
+victoria_sheep_tsbl %>% 
+  rename(Original = Count) %>% 
+  mutate(
+    Log           = log(Original),
+    `Square Root` = sqrt(Original),
+    Inverse       = 1 / Original
+  ) %>% 
+  pivot_longer(cols = Original:Inverse, names_to = "Transformation") %>% 
+  as_tsibble(
+    index = Month, 
+    key   = Transformation
+  ) %>% 
+  
+  autoplot(value) +
+  facet_wrap(~ Transformation, ncol = 1, scales = "free_y") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(
+    title    = "Quarterly Sheep Meat Production for Victoria",
+    subtitle = "Different transformations applied to original series",
+    x        = "Quarter",
+    y        = "(Transformation of the) Count of Slaughtered Sheep"
+  )
+```
+
+Some transformations seem to not stabilize the variance enough, while others seem to go too far.
+
+Another common transformation methodology is a [Box-Cox Transformation](https://en.wikipedia.org/wiki/Power_transform#Box%E2%80%93Cox_transformation). The `lambda` value controls the type and strength of the transformation. While there is not necessarily a widely accepted formal method for determining the optimal lambda value, the [Guerrero](https://feasts.tidyverts.org/reference/guerrero.html) method can often be used as a good starting point. We can implement this method by passing the `guerrero()` function into the `features()` function.
+
+```{r eval=FALSE}
+victoria_sheep_tsbl %>% 
+  features(Count, guerrero)
+```
+
+```{r echo=FALSE}
+victoria_sheep_tsbl %>% 
+  features(Count, guerrero) %>% 
+  mutate_if(is.numeric, round, digits = 2) %>% 
+  knitr::kable() %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+While the Guerrero method implemented above results in a negative lambda value, Dr. Hyndman mentioned that he has never used a negative lambda, and recommends that it be avoided. 
+
+Another option for finding a reasonable lambda value is to simply try several values of lambda and visually inspect the results. The Box-Cox transformed values can be calculated using the `box_cox()` function. Below, we try a few common values of lambda and plot the results.
+
+```{r}
+tibble(lambda = c(0, 0.5, 1, 2)) %>% 
+  mutate(
+    victoria_sheep_transformed = map(
+      .x = lambda,
+      .f = ~ victoria_sheep_tsbl %>% 
+        as_tibble() %>% 
+        mutate(Count = box_cox(Count, .x))
+    )
+  ) %>% 
+  unnest(victoria_sheep_transformed) %>% 
+  mutate(lambda = as.factor(lambda)) %>% 
+  
+  ggplot(aes(x = Month, y = Count, color = lambda)) +
+  geom_line() +
+  facet_wrap(~ lambda, ncol = 1, scales = "free_y") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(
+    title    = "Box-Cox Transformations of Quarterly Sheep Meat Production",
+    subtitle = "Different values of lambda applied to original series",
+    x        = "Quarter",
+    y        = "(Transformation of the) Count of Slaughtered Sheep"
+  )
+```
+
+None of these values look that great. 
+
+To demonstrate what a successful variance stabilization would look like, we can look at what happens with the following data set:
+
+```{r}
+victoria_food_retail_tsbl %>% 
+  rename(Original = Turnover) %>% 
+  mutate(
+    `Square Root` = Original ^ (1/2),
+    Log           = log(Original)
+  ) %>% 
+  pivot_longer(
+    cols         = -Month, 
+    names_to     = "Transformation",
+    names_ptypes = list(
+      Transformation = factor(levels = c("Original", "Square Root", "Log"))
+    )
+  ) %>% 
+  as_tsibble(index = Month, key = Transformation) %>% 
+  
+  autoplot(value) +
+  facet_wrap(~ Transformation, ncol = 1, scales = "free_y") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  labs(
+    title    = "Yearly Food Retail Turnover for Victoria, Australia",
+    subtitle = "Different transformations applied to the original series",
+    x        = "Quarter",
+    y        = "(Transformation of) Australian Dollars ($M)"
+  )
+```
+
+# Recap
+
+The first day of the workshop focused on all of the foundational work to build up to forecasting. We covered:
+
+1. What a `tsibble` is
+2. Time-series plots
+3. Time-series transformations
+
+The next post will document day 2 of the workshop. Day 2 consisted of: 
+
+1. Building time-series models
+2. Validating time-series models
+3. Producing forecasts
+4. Determining forecast accuracy
+
+Big thanks to the Dr. Hyndman and and the [`tidyverts` team](https://github.com/orgs/tidyverts/people) for building these packages and putting together a fantastic workshop!

@@ -1,0 +1,633 @@
+---
+title: The rsample Package
+author: Robert Lankford
+date: '2020-03-22'
+slug: the-rsample-package
+categories: []
+tags:
+  - R
+  - modeling
+  - resampling
+editor_options: 
+  chunk_output_type: console
+---
+
+The following is a demo of data splitting and resampling with the `rsample` package from the `tidymodels` ecosystem.
+
+<!--more-->
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, message = FALSE, warning = FALSE, error = FALSE, 
+  fig.align = "center"
+)
+```
+
+# Motivation
+
+This is the first in a series of demos I have given at my current job regarding the [`tidymodels`](https://github.com/tidymodels) packages and how I typically use them. While the ecosystem is still under development at the time of writing, it has reached a point where I find myself using it in place of my old R modeling pipelines (e.g. [`caret`](http://topepo.github.io/caret/index.html)).
+
+Much of the theory and application behind these packages that I will be discussing comes from a mixture of my own experience and [Applied Predictive Modeling](http://appliedpredictivemodeling.com/). Not by coincidence, this book is by [Dr. Max Kuhn](https://github.com/topepo), the lead author of `tidymodels`.
+
+# Starting Point
+
+Broadly speaking, the first step in a modeling workflow (after the initial data collection, aggregation, exploration, etc.) is to separate the data into the training and testing sets. After that will be any necessary preprocessing, followed by modeling with some cross-validation or resampling strategy of the training data, validating the models on the testing set, and so on. The [`rsample`](https://tidymodels.github.io/rsample/index.html) package handles the data splitting and resampling.
+
+I will start off by loading the `rsample` package. The `dplyr` and `tidyr` packages will also be used.
+
+```{r packages}
+library(rsample)
+
+library(dplyr)
+library(tidyr)
+```
+
+```{r other_packages, echo=FALSE}
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+
+theme_set(theme_minimal())
+```
+
+The data sets used come from the `modeldata` (for cross-sectional) and the `tsibbledata` (for time series) packages. Since we are just splitting and resampling, these very basic data sets will illustrate those points well. I will explore more interesting data sets in the preprocessing and modeling posts of this series.
+
+The `attrition` data from the `modeldata` package come from the IBM Watson Analytics Lab, and provide information on employee characteristics, such as age, education level, and gender. Typically, this data set is used in binary classification demonstrations as the outcome variable is whether the employee leaves his or her job; however, I will be using this data set with `MonthlyRate` as the outcome variable. In this scenario, we would want to see if a person's attributes, such as age, education, and gender, can predict their monthly pay.
+
+```{r}
+data("attrition", package = "modeldata")
+
+attrition %>% 
+  as_tibble() %>% 
+  select(
+    MonthlyRate, Age, Education, Gender, YearsInCurrentRole, JobInvolvement, 
+    TotalWorkingYears
+  ) -> cross_sect_data_tbl
+```
+
+```{r echo=FALSE}
+cross_sect_data_tbl %>% 
+  glimpse()
+```
+
+The `nyc_bikes` data from the `tsibbledata` package come from [Citi Bike](citibikenyc.com) and provide data on each trip for 10 bikes in NYC in 2018. Below, I have simplified the data set to show the duration (in minutes) that each bike was used each day. This gives us a time series with multiple subgroups. Two of the bike ids were removed because they span only a small fraction of time horizon that the other bikes do. 
+
+```{r}
+tsibbledata::nyc_bikes %>% 
+  select(bike_id, start_time, stop_time) %>% 
+  filter(!(bike_id %in% c("31681", "31735"))) %>% 
+  mutate(
+    duration = stop_time - start_time,
+    date     = lubridate::as_date(start_time)
+  ) %>% 
+  group_by(bike_id, date) %>% 
+  summarize(duration = sum(duration)) %>% 
+  ungroup() %>% 
+  mutate(duration = duration %>% as.numeric() %>% round(1)) %>% 
+  arrange(date) -> time_series_data_tbl
+```
+
+```{r echo=FALSE}
+time_series_data_tbl %>% 
+  glimpse()
+```
+
+# Basic Train/Test Splits
+
+The most basic data splitting is simply separating your data into two groups.
+
+1. The training set, on which the model(s) will be built and resampling will be done.
+2. The testing set, on which validation metrics will be calculated to, among other things, compare the performance of different modeling algorithms.
+
+While this process is simple, there are a few ways you can and should do it, depending on the characteristics of your data.
+
+## Simple Initial Split
+
+A simple random split is the most straightforward way of splitting your data. The `initial_split()` function "creates a single binary split of the data". In other words, it takes a simple random sample of the data, based on the `prop` argument (the proportion of the data you want in the training set), and splits the data into two groups. For example, if you set `prop` equal to 0.7, 70% of the data will be randomly put into the training set and the remaining 30% will be put into the testing set. Since the splitting is random, it is always a good idea to set a seed for reproducibility.
+
+```{r}
+set.seed(1917)
+
+cross_sect_simple_rsplit <- initial_split(
+  data = cross_sect_data_tbl, 
+  prop = 0.7
+)
+```
+
+The result of the `initial_split` function is an `rsplit` object. Printing an `rsplit` object will show:
+
+1. The number of observations in the training set,
+2. The number of observations in the testing set, and
+3. The number of observations in the original data set
+
+```{r echo=FALSE}
+cross_sect_simple_rsplit
+```
+
+## Time-Based Initial Split
+
+A simple random sample is often fine for cross-sectional data, but it will most often not work for time series data. When a time component is introduced, you have to make sure that every data point in the training set occurs earlier in time than every data point in the testing set. In other words, you do not want to train a model "on the future" and validate it by predicting on data that happened "in the past". You always want the training set to have occurred before the testing set.
+
+The `rsample` package provides the `initial_time_split()` function. This function takes in a proportion, just like `initial_split()`, but ensures that the proportional split occurs linearly in time. For example, if you had a year of data, and set `prop` equal to 0.7, the first 70% of the year would be in the training set, and the last 30% of the year would be in the testing set. Like with `initial_split()`, the output is an `rsplit` object and printing it shows the same three attributes.
+
+```{r}
+time_series_data_rsplit <- initial_time_split(
+  data = time_series_data_tbl, 
+  prop = 0.7
+)
+```
+
+```{r echo=FALSE}
+time_series_data_rsplit
+```
+
+To check that this function worked as expected, we can extract the row indices of the training and testing sets. The training set row indices are contained in the `in_id` element of the `rsplit` object. We can use base R indexing of data frames to extract the training set, then negate the indices to get the testing set. Note that there is an easier way to do this that will be introduced later.
+
+```{r}
+time_series_train_tbl <- time_series_data_tbl[time_series_data_rsplit$in_id, ]
+time_series_test_tbl  <- time_series_data_tbl[-time_series_data_rsplit$in_id, ]
+```
+
+Checking the min and max dates of the training and testing data shows that the breaking point between the two sets has been chosen correctly; that is, the entire training set happens before or at the breaking point and the entire testing set happens at or after the breaking point.
+
+```{r echo=FALSE}
+tibble(
+  `Min Date in Training Data` = min(time_series_train_tbl$date),
+  `Max Date in Training Data` = max(time_series_train_tbl$date),
+  `Min Date in Testing Data`  = min(time_series_test_tbl$date),
+  `Max Date in Testing Data`  = max(time_series_test_tbl$date)
+) %>% 
+  pivot_longer(cols = everything()) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+## Stratified Split
+
+In looking at cross-sectional data, a simple random sample may not be the best solution for the initial split. 
+
+For classification problems, if the outcome classes are imbalanced (one value has many more observations that the other) then we run the risk of not having the same ratio of outcomes in both data sets. If the testing set had a much higher proportion of the majority class, the validation score calculated on it would be misleading and most likely indicate a better fit that what a properly balanced testing set would show. 
+
+For regression, we may have an explanatory variable that is imbalanced. This could affect validation in much the same way as classification, we would have a non-representative sample of our population of interest.
+
+The `initial_split()` function contains a `strata` argument. Specifying one of the columns as the `strata` results in stratified random sampling within that variable. For example, if a binary variable had 90% one value and 10% another, the splitting algorithm would work to, as close as possible, produce a testing set and training set that both had the same 90/10 split for that variable.
+
+Since our outcome variable for the cross-sectional `attrition` data is continuous, we will look at the `Education` explanatory variable. This variable contains information on the education level of an employee and has 5 (ordinal) levels:
+
+1. Below_College,
+2. College,
+3. Bachelor,
+4. Master, and
+5. Doctor
+
+Separating out the training and testing data from the `rsplit` object, we can take a look at the percent allocation of the `Education` variable for each set.
+
+```{r}
+cross_sect_train_tbl <- cross_sect_data_tbl[cross_sect_simple_rsplit$in_id, ]
+cross_sect_test_tbl  <- cross_sect_data_tbl[-cross_sect_simple_rsplit$in_id, ]
+```
+
+#### Training Set
+
+```{r echo=FALSE}
+cross_sect_train_tbl %>% 
+  count(Education) %>% 
+  mutate(pct = round(n / sum(n), 2)) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+#### Testing Set
+
+```{r echo=FALSE}
+cross_sect_test_tbl %>% 
+  count(Education) %>% 
+  mutate(pct = round(n / sum(n), 2)) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+Some of the levels are fairly close, but Bachelor has about a 6% difference between the two sets. Likewise, Master has about a 3% difference. While this not seem like much, we want the distribution to be as close as possible. If it is possible to get it closer we should try to do so. Below, we can see what happens when we assign "Education" as the `strata` in the `initial_split()` function.
+
+```{r}
+set.seed(1917)
+
+cross_sect_strat_rsplit <- initial_split(
+  data   = cross_sect_data_tbl, 
+  prop   = 0.7, 
+  strata = "Education"
+)
+
+cross_sect_strat_train_tbl <- cross_sect_data_tbl[cross_sect_strat_rsplit$in_id, ]
+cross_sect_strat_test_tbl  <- cross_sect_data_tbl[-cross_sect_strat_rsplit$in_id, ]
+```
+
+#### Training Set
+
+```{r echo=FALSE}
+cross_sect_strat_train_tbl %>% 
+  count(Education) %>% 
+  mutate(pct = round(n / sum(n), 2)) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+#### Testing Set
+
+```{r echo=FALSE}
+cross_sect_strat_test_tbl %>% 
+  count(Education) %>% 
+  mutate(pct = round(n / sum(n), 2)) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+Now, Bachelor and Master has the same percent allocation in each set. Notice though that the other three values do not have the same percent allocations; however, they are all within ~2%, which is lower than the 3% before the `strata` argument was used. This is usually because there are not enough data points to get all values to be exactly the same allocation.
+
+## Train and Test Data
+
+Up until this point I have been manually determining the training and testing sets by extracting the `in_id` out of the `rsplit` object and using base R to filter the appropriate rows from the original data set to get the training data, and then negating those indexes to get the testing data. The `rsample` package provides the `training()` and `testing()` functions to automate these extractions. Below, you can see that either way results in the same data set.
+
+```{r}
+cross_sect_train_tbl    <- cross_sect_data_tbl[cross_sect_strat_rsplit$in_id, ]
+cross_sect_training_tbl <- training(cross_sect_strat_rsplit)
+
+all_equal(cross_sect_train_tbl, cross_sect_training_tbl)
+```
+
+```{r}
+cross_sect_test_tbl    <- cross_sect_data_tbl[-cross_sect_strat_rsplit$in_id, ]
+cross_sect_testing_tbl <- testing(cross_sect_strat_rsplit)
+
+all_equal(cross_sect_test_tbl, cross_sect_testing_tbl)
+```
+
+# Resampling Techniques
+
+After we do the initial train/test split on a data set, we will typically do some exploratory data analysis (EDA) and  some preprocessing to the training set before moving into trying out some modeling algorithms. Since we are looking at the `rsample` package right now, we will skip ahead to the resampling portion and visit the other steps in different posts.
+
+Resampling is the process drawing multiple samples from an original data set. There are various flavors of resampling, some with replacement (i.e. you randomly draw an observation, put it back, and randomly draw again, so it is possible you have duplicate observations) and some without replacement (i.e. the final resampled set will be some unique subset of the original data).
+
+Some of the resampling techniques I will discuss below are:
+
+* k-fold cross-validation
+* leave-one-out cross-validation
+* Monto-Carlo cross-validation
+* bootstrapping
+
+## k-Fold Cross-Validation
+
+Probably the most famous resampling technique used in data science is k-fold cross-validation. It is a straightforward process:
+
+1. The data set is split *k* times into similar-sized chunks (folds)
+2. All but one of the folds is combined into a data set
+3. A model is built on the data set from step 2
+4. The unused fold is fed into the model and predictions are generated
+5. Those predictions are used to calculate a desired performance metric
+
+This process is repeated until all of the folds have been held out and used for predictions one time each. The resulting *k* performance metrics are then summarized (usually by taking the average, but other aggregations are available) and a final performance metrics for the cross-validation is reported.
+
+To create *k* folds using the `rsample` package, the `vfold_cv()` function is used. The `v` (same thing as *k*) argument specifies how many folds, and the `repeats` argument allows for the cross-validation to be repeated a certain number of times, with a new batch of *k* folds randomly generated each time. Like the `initial_split()` function, you can choose a variable to do a stratified random sample. Also like the `initial_split()` function, these are random samples, so setting a seed is advised.
+
+```{r}
+set.seed(1914)
+
+cross_sect_vfold_rsplit <- vfold_cv(
+  data    = cross_sect_training_tbl, 
+  v       = 5, 
+  repeats = 1,
+  strata  = "Education"
+)
+```
+
+Printing out the returned `rset` object prints the number of folds as well as the `split` objects and the `id` of each fold in a data frame. The `split` object shows how many observations are in the `k - 1` folds that would be used to train a model, and how many observations are in the held-out fold.
+
+```{r echo=FALSE}
+cross_sect_vfold_rsplit
+```
+
+## Leave-One-Out Cross-Validation
+
+Leave-one-out cross-validation (LOOCV) is a special case of k-fold cross-validation where *k* is equal to the number of observations in the training set. So each iteration results in a model trained on all but one of the observations and a performance metric calculated from the prediction of the single held-out observation. The resulting summarized performance metric can be thought of as the average (or median, maximum, or any aggregation metric you choose) performance across each observation individually.
+
+The `rsample` package provides the `loo_cv()` function. The only argument is the data set. 
+
+```{r}
+cross_sect_loocv_rsplit <- loo_cv(cross_sect_train_tbl)
+```
+
+Printing out the resulting `rset` object prints that it is LOOCV, the `split` objects and the resample `id`s. Notice that, as expected, the `split` object shows that there is one observation (on the right side) held out on which to calculate a performance metric for each resample.
+
+```{r echo=FALSE}
+cross_sect_loocv_rsplit
+```
+
+## Monte-Carlo Cross-Validation
+
+Monte-Carlo cross-validation involves randomly selecting (**without** replacement) some proportion of the training data to build the model and assigned the non-selected observations to the set on which the validation metric will be calculated. This process is then repeated a certain number of times to get that number of resamples. Like with k-fold cross-validation, the final performance metrics is summarized across all resamples. What makes Monte-Carlo cross-validation interesting is that, since the resamples are randomly sampled, it is possible that a single observation may end up in all the trained models, or it may end up in none of them.
+
+We can do a Monte-Carlo cross-validation resample by using the `mc_cv()` function in the `rsample` package. The `prop` argument specifies how much of the data you want to go towards model training, and the `times` argument dictates how many resamples will be done. Note that again there is a `strata` argument for stratified random sampling. Again, setting a seed for random sampling is a good practice.
+
+```{r}
+set.seed(1914)
+
+cross_sect_monte_carlo_resplit <- mc_cv(
+  data   = cross_sect_training_tbl,
+  prop   = 0.7,
+  times  = 50,
+  strata = "Education"
+)
+```
+
+Printing out the resulting `rset` object will tell you that it is a Monte-Carlo Cross-Validation, what the percentage split is, and how many resamples were taken. Additionally, you will again see the `split` objects and the resample `id`s.
+
+```{r echo=FALSE}
+cross_sect_monte_carlo_resplit
+```
+
+## Bootstrap
+
+The bootstrap is similar to Monte-Carlo, except that the random samples are taken **with** replacement. Additionally, each bootstrap resample will result in a sample that is the same number of rows as the original data set. This means that any given observation could appear multiple times in the data set used to train the model, once, or not at all. The held-out data are the data points that were not included in the bootstrap resample.
+
+We can do a bootstrap resample by using the `boostraps()` function in the `rsample` package. The `times` argument is the number of bootstrap samples to take (analogous to the number of folds to create). For example, if `times` is 25, then a random sample, with replacement, that is the same size as the original data set will be taken 25 times. Note that again there is a `strata` argument for stratified random sampling and we should set a seed.
+
+```{r}
+set.seed(1914)
+
+cross_sect_bootstrap_rsplit <- bootstraps(
+  data   = cross_sect_training_tbl,
+  times  = 50,
+  strata = "Education"
+)
+```
+
+Printing out the resulting `rset` object will tell you that it is a Bootstrap sampling. Additionally, you will again see the `split` objects and the resample `id`s.
+
+```{r echo=FALSE}
+cross_sect_bootstrap_rsplit
+```
+
+## Train/Test vs Analysis/Assessment
+
+I have been very careful in using the phrases *"training data"* and *"testing data"*. Historically, *training data* is the larger portion of the data after the **initial** split and *testing data* is the smaller portion. A more undefined area is what to call the two portions of the training data when they are split during resampling. For example, for 10-fold cross-validation, what should one call the 9 folds used to train the model and the single fold used to calculate the performance metric? 
+
+Dr. Kuhn and the `tidymodels` team have proposed using the terms *"analysis data"* and *"assessment data"* to solve this nomenclature problem. The *analysis data* is the data from the resample that is used to train a model and the *assessment data* is the data from the resample that is used to calculate the performance metric. This way, we can keep training/testing and analysis/assessment separate from each other.
+
+Looking back at the 5-fold cross-validation the cross-sectional data, there are, of course, 5 folds: 
+
+```{r}
+cross_sect_vfold_rsplit
+```
+
+Next, we can access the splits using `$splits`:
+
+```{r}
+cross_sect_vfold_rsplit$splits
+```
+
+Further, we can access the split object itself by specifying its number:
+
+```{r}
+cross_sect_vfold_rsplit$splits[[1]]
+```
+
+Of course, there is more than one way to pull out a split object:
+
+```{r}
+cross_sect_vfold_rsplit %>% 
+  purrr::pluck("splits")
+```
+
+```{r}
+cross_sect_vfold_rsplit %>% 
+  purrr::pluck(1, 1)
+```
+
+Once we have the split object isolated, we can use the `analysis()` and `assessment()` functions from `rsample` to get the respective data sets.
+
+```{r}
+cross_sect_vfold_rsplit %>% 
+  purrr::pluck(1, 1) %>% 
+  analysis() %>% 
+  glimpse()
+```
+
+```{r}
+cross_sect_vfold_rsplit %>% 
+  purrr::pluck(1, 1) %>% 
+  assessment() %>% 
+  glimpse()
+```
+
+# Other Utilities
+
+The following sections contain interesting functions that the `rsample` package provides which do not fit cleanly into any of the above sections.
+
+## Nested Resamples 
+
+The `rsample` package has an interesting function, `nested_cv()`, that allows you to resample a data set, and then resample those resamples. For example, you could 10-fold cross-validate your training data (use the `outside` argument) and then do a bootstrap resample to each of the 10 folds (use the `inside` argument).
+
+```{r}
+set.seed(1914)
+
+cross_sect_nested_rsplit <- nested_cv(
+  data    = cross_sect_training_tbl,
+  outside = vfold_cv(v = 10, strata = "Education"),
+  inside  = bootstraps(times = 30, strata = "Education")
+)
+```
+
+```{r echo=FALSE}
+cross_sect_nested_rsplit
+```
+
+Each of the original 10 splits had 30 bootstrap samples taken and placed in the `inner_resamples` column. THe first fold in the `splits` column has 927 observations in the analysis data set. Taking the inner resample for that first split shows 30 bootstrap splits, each with 927 observations in its analysis set, as would be expected. 
+
+```{r}
+cross_sect_nested_rsplit$inner_resamples[[1]]
+```
+
+```{r}
+cross_sect_nested_rsplit %>% 
+  select(inner_resamples) %>% 
+  slice(1) %>% 
+  unnest(inner_resamples) %>% 
+  purrr::pluck(1, 1) %>% 
+  analysis()
+```
+
+## Tidy `rsplit` Objects and Plotting Resamples
+
+The `rsplit`, `rset`, `vfold_cv`, and `nested_cv` objects all have methods for the `tidy()` function. It unpacks the `split` objects, puts them into a tidy tibble format, and shows which row corresponds to which data set (analysis or assessment).
+
+```{r eval=FALSE}
+cross_sect_simple_rsplit %>% 
+  tidy() %>% 
+  filter(Data == "Analysis")
+```
+
+```{r echo=FALSE}
+cross_sect_simple_rsplit %>% 
+  tidy() %>% 
+  filter(Data == "Analysis") %>% 
+  head(5) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+```{r eval=FALSE}
+cross_sect_simple_rsplit %>% 
+  tidy() %>% 
+  filter(Data == "Assessment")
+```
+
+```{r echo=FALSE}
+cross_sect_simple_rsplit %>% 
+  tidy() %>% 
+  filter(Data == "Assessment") %>% 
+  head(5) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+On it's own, this is not terribly interesting; however, it can be very useful if you want to visually check which portions of your data are in which set (for example, to make sure the split was truly random). The following code is taken directly from the [rsample website](https://tidymodels.github.io/rsample/reference/tidy.rsplit.html), but it would be the same approach in almost every situation where you would want to do this.
+
+```{r}
+library(ggplot2)
+
+cross_sect_vfold_rsplit %>%
+  tidy() %>% 
+  ggplot(aes(x = Fold, y = Row, fill = Data)) +
+  geom_tile() +
+  scale_fill_brewer() +
+  theme_bw()
+```
+
+We can see that there are a few pockets of closely selected Assessment data, but overall the distribution of the 5 folds looks randomly split into the Analysis and Assessment sets.
+
+# Rolling Time Windows
+
+The last `rsample` function I want to discuss is the `rolling_origin()` function for rolling time windows. Earlier I talked about the `initial_time_split()` function that splits a time series linearly in time, so earlier observations were in the training set and later observations were in the testing set. Often in time-series modeling we want to have a "rolling window". This is a popular method for cross-validating time-series models. The chapter on time-series cross-validation in [Forecasting Practices and Principles](https://otexts.com/fpp3/tscv.html) by Dr. Rob Hyndman describes this process very well. Essentially, we want to steadily move the observations in the training and testing sets later in time as we resample. The first resample will contain the earliest observations and the last resample will contain the latest. We can have either cumulative or non-cumulative rolling windows, as will be shown below.
+
+I will use the same time series data as in the Time-Based Initial split section. To make things simple, I will also filter down to just one of the bikes, id 26301.
+
+```{r echo=FALSE}
+time_series_data_tbl %>%
+  filter(bike_id == "26301") %>% 
+  arrange(date) %>% 
+  head(10) %>% 
+  kable() %>% 
+  kable_styling(full_width = FALSE)
+```
+
+## Cumulative Roll
+
+We can take a "rolling sample" where we take some number of observations, starting at the origin, and put them in the training/analysis data set. We then take the very next chronological observation and place it in testing/assessment data set. Setting the `cumulative` argument to `TRUE` anchors the roll at the origin so that each subsequent resample takes the previous resample's testing/assessment data set observation, places it in the training/analysis data set, and takes the next chronological observation in the original data set as the new testing/assessment data set. The plot below shows how this resampling method works.
+
+```{r}
+time_series_data_tbl %>% 
+  filter(bike_id == "26301") %>% 
+  arrange(date) %>% 
+  rolling_origin(
+    initial    = 7, 
+    cumulative = TRUE
+  ) -> time_series_rolling_cumul_rsplit
+```
+
+```{r echo=FALSE}
+time_series_rolling_cumul_rsplit %>% 
+  tidy() %>% 
+  filter(
+    Resample %in% c("Slice001", "Slice002", "Slice003", "Slice004", "Slice005")
+  ) %>% 
+  mutate(
+    Row      = as.factor(Row),
+    Resample = Resample %>% as.factor() %>% forcats::fct_rev()
+  ) %>% 
+  ggplot(aes(x = Row, y = Resample, color = Data)) +
+  geom_point(size = 5) +
+  theme_bw()
+```
+
+The x-axis above is the index of the rows in chronological order. So row 1 is the earliest observation, row 2 is the second earliest, etc. The first slice `Slice001` at the very top has the 7 earliest observations in the training/analysis (because I set the `initial` argument to 7) and the 8th earliest observation in the testing/assessment set. Since `cumulative` is set to `TRUE`, each new slice's analysis set grows by 1, remaining anchored to the earliest observation.
+
+Like with the other resampling techniques, you can pass the `split` object into the `analysis()` and `assessment()` functions to get the respective data set. Using the `training()` and `testing()` functions would yield the same results. The example below shows the first split, which is the first 7 chronological observations in the training/analysis set and the 8th in the testing/assessment set.
+
+```{r}
+time_series_rolling_cumul_rsplit$splits[[1]] %>% analysis()
+```
+
+```{r}
+time_series_rolling_cumul_rsplit$splits[[1]] %>% assessment()
+```
+
+Checking the 2nd split shows the 8th observation added to the training/analysis set and the 9th replacing it as the testing/assessment set.
+
+```{r}
+time_series_rolling_cumul_rsplit$splits[[2]] %>% analysis()
+```
+
+```{r}
+time_series_rolling_cumul_rsplit$splits[[2]] %>% assessment()
+```
+
+## Non-Cumulative Roll
+
+Setting the `cumulative` argument to `FALSE` puts the *rolling* in *rolling time window*. That is, when we move to the next slice, the earliest observation in the training/analysis set is dropped when the previous slice's testing/assessment set observation is added to the training/analysis set. The plot below shows this.
+
+```{r}
+time_series_data_tbl %>% 
+  filter(bike_id == "26301") %>% 
+  arrange(date) %>% 
+  rolling_origin(
+    initial    = 7, 
+    cumulative = FALSE
+  ) -> time_series_rolling_noncumul_rsplit
+```
+
+```{r echo=FALSE}
+time_series_rolling_noncumul_rsplit %>%
+  tidy() %>% 
+  filter(
+    Resample %in% c("Slice001", "Slice002", "Slice003", "Slice004", "Slice005")
+  ) %>%
+  mutate(
+    Row      = as.factor(Row),
+    Resample = Resample %>% as.factor() %>% forcats::fct_rev()
+  ) %>% 
+  ggplot(aes(x = Row, y = Resample, color = Data)) +
+  geom_point(size = 5) +
+  theme_bw()
+```
+
+As seen above, the time window stays the same size for reach slice and moves in time by one period each resample. Doing this keeps the training/analysis set the same size for each slice, where setting the `cumulative` argument to `TRUE` increases the size of the training/analysis set by one for each slice.
+
+We can again see the training/analysis and testing/assessment sets for the first slice.
+
+```{r}
+time_series_rolling_noncumul_rsplit$splits[[1]] %>% analysis()
+```
+
+```{r}
+time_series_rolling_noncumul_rsplit$splits[[1]] %>% assessment()
+```
+
+Looking at the second slice confirms that the training/analysis set contains the same number of observations as the first slice, and both the training/analysis and testing/assessment sets have simply shifted forward one period in time.
+
+```{r}
+time_series_rolling_noncumul_rsplit$splits[[2]] %>% analysis()
+```
+
+```{r}
+time_series_rolling_noncumul_rsplit$splits[[2]] %>% assessment()
+```
+
+# Wrap Up
+
+The `rsample` package contains many useful functions for splitting and resampling data sets. In addition to the functions demonstrated here, other `rsample` functions include:
+
+* `group_vfold_cv()`: create cross-validation folds based on a grouping variable
+* `rsample2caret()`: convert an `rset` object from `rsample` into list than mimics part of the `trainControl` object from the `caret` package
+* `caret2rsample()`: convert the `index` and `indexOut` elements of `caret`'s `trainControl` object into an `rset` object from `rsample`
+
+For more information, see the [`rsample` website](https://tidymodels.github.io/rsample/index.html). 
